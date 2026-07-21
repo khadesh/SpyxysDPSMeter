@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
@@ -17,8 +18,11 @@ namespace SpyxysDPSMeter
 {
     public partial class MainWindow : Window
     {
-        private const string LogDirectory =
+        private const string DefaultLogDirectory =
             @"C:\Users\Public\Daybreak Game Company\Installed Games\EverQuest Legends\Logs";
+
+        private const string ProjectUrl =
+            "https://github.com/khadesh/SpyxysDPSMeter";
 
         private const int MaximumLinesPerRead = 1000;
         private const int DpsWindowSeconds = 30;
@@ -441,6 +445,7 @@ namespace SpyxysDPSMeter
         private readonly HashSet<string> _learnedHealingSpellNames =
             new(StringComparer.OrdinalIgnoreCase);
 
+        private string _logDirectory = DefaultLogDirectory;
         private string? _activeFilePath;
         private string _characterName = "Character";
         private string _serverName = "Server";
@@ -647,14 +652,14 @@ namespace SpyxysDPSMeter
         {
             try
             {
-                if (!Directory.Exists(LogDirectory))
+                if (!Directory.Exists(_logDirectory))
                 {
-                    SetStatus($"Log folder not found: {LogDirectory}");
+                    SetStatus($"Log folder not found: {_logDirectory}");
                     return;
                 }
 
                 FileInfo? newest = Directory
-                    .EnumerateFiles(LogDirectory, "eqlog_*_*.txt", SearchOption.TopDirectoryOnly)
+                    .EnumerateFiles(_logDirectory, "eqlog_*_*.txt", SearchOption.TopDirectoryOnly)
                     .Select(path => new FileInfo(path))
                     .Where(info => FileNameRegex.IsMatch(info.Name))
                     .OrderByDescending(info => info.LastWriteTimeUtc)
@@ -3365,10 +3370,194 @@ namespace SpyxysDPSMeter
             }
 
             PopulateGroupMemberMenus();
+            UpdateLogDirectoryMenuItems();
 
             menu.PlacementTarget = SettingsButton;
             menu.IsOpen = true;
             e.Handled = true;
+        }
+
+
+        private void ChangeLogDirectoryMenuItem_Click(
+            object sender,
+            RoutedEventArgs e)
+        {
+            string initialDirectory =
+                Directory.Exists(_logDirectory)
+                    ? _logDirectory
+                    : Directory.Exists(DefaultLogDirectory)
+                        ? DefaultLogDirectory
+                        : string.Empty;
+
+            using global::System.Windows.Forms.FolderBrowserDialog dialog =
+                new()
+                {
+                    Description =
+                        "Choose the folder containing EverQuest Legends " +
+                        "eqlog_CHARACTER_SERVER.txt files.",
+                    ShowNewFolderButton = false,
+                    UseDescriptionForTitle = true,
+                    SelectedPath = initialDirectory
+                };
+
+            global::System.Windows.Forms.DialogResult result =
+                dialog.ShowDialog();
+
+            if (result !=
+                    global::System.Windows.Forms.DialogResult.OK ||
+                string.IsNullOrWhiteSpace(dialog.SelectedPath))
+            {
+                return;
+            }
+
+            ChangeLogDirectory(
+                dialog.SelectedPath,
+                isRevertToDefault: false);
+        }
+
+        private void RevertLogDirectoryMenuItem_Click(
+            object sender,
+            RoutedEventArgs e)
+        {
+            ChangeLogDirectory(
+                DefaultLogDirectory,
+                isRevertToDefault: true);
+        }
+
+        private void ChangeLogDirectory(
+            string directory,
+            bool isRevertToDefault)
+        {
+            string normalizedDirectory;
+
+            try
+            {
+                normalizedDirectory =
+                    NormalizeDirectoryPath(directory);
+            }
+            catch (Exception ex)
+            {
+                SetStatus(
+                    $"Unable to use the selected log folder: {ex.Message}");
+                return;
+            }
+
+            if (!isRevertToDefault &&
+                !Directory.Exists(normalizedDirectory))
+            {
+                SetStatus(
+                    $"The selected log folder does not exist: " +
+                    $"{normalizedDirectory}");
+                return;
+            }
+
+            if (DirectoryPathsEqual(
+                    _logDirectory,
+                    normalizedDirectory))
+            {
+                UpdateLogDirectoryMenuItems();
+
+                SetStatus(
+                    isRevertToDefault
+                        ? "The default log directory is already selected."
+                        : "That log directory is already selected.");
+
+                return;
+            }
+
+            _logDirectory = normalizedDirectory;
+            SaveSettings();
+            UpdateLogDirectoryMenuItems();
+
+            RestartLogMonitoringForDirectoryChange();
+
+            if (string.IsNullOrWhiteSpace(_activeFilePath))
+            {
+                SetStatus(
+                    Directory.Exists(_logDirectory)
+                        ? $"No eqlog_CHARACTER_SERVER.txt file was found in {_logDirectory}."
+                        : $"Log folder not found: {_logDirectory}");
+            }
+        }
+
+        private void RestartLogMonitoringForDirectoryChange()
+        {
+            _activeFilePath = null;
+            _characterName = "Character";
+            _serverName = "Server";
+
+            ResetAllState();
+            RefreshDisplay();
+            DetectLatestLogFile();
+        }
+
+        private void UpdateLogDirectoryMenuItems()
+        {
+            string displayName =
+                GetDirectoryDisplayName(_logDirectory);
+
+            CurrentLogDirectoryMenuItem.Header =
+                $"Current: {displayName}";
+            CurrentLogDirectoryMenuItem.ToolTip =
+                _logDirectory;
+            LogDirectoryMenuItem.ToolTip =
+                _logDirectory;
+
+            RevertLogDirectoryMenuItem.IsEnabled =
+                !DirectoryPathsEqual(
+                    _logDirectory,
+                    DefaultLogDirectory);
+        }
+
+        private static string GetDirectoryDisplayName(
+            string directory)
+        {
+            try
+            {
+                DirectoryInfo info =
+                    new(directory);
+
+                return string.IsNullOrWhiteSpace(info.Name)
+                    ? info.FullName
+                    : info.Name;
+            }
+            catch
+            {
+                return directory;
+            }
+        }
+
+        private static string NormalizeDirectoryPath(
+            string directory)
+        {
+            if (string.IsNullOrWhiteSpace(directory))
+            {
+                return DefaultLogDirectory;
+            }
+
+            return new DirectoryInfo(
+                    directory.Trim())
+                .FullName;
+        }
+
+        private static bool DirectoryPathsEqual(
+            string left,
+            string right)
+        {
+            try
+            {
+                return string.Equals(
+                    NormalizeDirectoryPath(left),
+                    NormalizeDirectoryPath(right),
+                    StringComparison.OrdinalIgnoreCase);
+            }
+            catch
+            {
+                return string.Equals(
+                    left.Trim(),
+                    right.Trim(),
+                    StringComparison.OrdinalIgnoreCase);
+            }
         }
 
         private void DisplaySettingMenuItem_Click(
@@ -3687,6 +3876,22 @@ namespace SpyxysDPSMeter
                     settings.AlwaysShowGroupMembers;
                 _showMainAssistIndicators =
                     settings.ShowMainAssistIndicators;
+
+                try
+                {
+                    _logDirectory =
+                        string.IsNullOrWhiteSpace(
+                            settings.LogDirectory)
+                            ? DefaultLogDirectory
+                            : NormalizeDirectoryPath(
+                                settings.LogDirectory);
+                }
+                catch
+                {
+                    _logDirectory =
+                        DefaultLogDirectory;
+                }
+
                 _mainAssistName =
                     string.IsNullOrWhiteSpace(
                         settings.MainAssistName)
@@ -3738,6 +3943,8 @@ namespace SpyxysDPSMeter
                 !_useThrottledPlatinumRate;
             PlatinumModeThrottledMenuItem.IsChecked =
                 _useThrottledPlatinumRate;
+
+            UpdateLogDirectoryMenuItems();
         }
 
         private void SaveSettings()
@@ -3764,6 +3971,8 @@ namespace SpyxysDPSMeter
                         _alwaysShowGroupMembers,
                     ShowMainAssistIndicators =
                         _showMainAssistIndicators,
+                    LogDirectory =
+                        _logDirectory,
                     MainAssistName =
                         _mainAssistName,
                     ManualGroupMembers = _manualGroupMembers
@@ -3785,6 +3994,34 @@ namespace SpyxysDPSMeter
             catch (Exception ex)
             {
                 SetStatus($"Unable to save settings.json: {ex.Message}");
+            }
+        }
+
+
+        private void ProjectLink_RequestNavigate(
+            object sender,
+            global::System.Windows.Navigation.RequestNavigateEventArgs e)
+        {
+            try
+            {
+                string address =
+                    e.Uri?.AbsoluteUri ??
+                    ProjectUrl;
+
+                Process.Start(
+                    new ProcessStartInfo
+                    {
+                        FileName = address,
+                        UseShellExecute = true
+                    });
+
+                e.Handled = true;
+            }
+            catch (Exception ex)
+            {
+                e.Handled = true;
+                SetStatus(
+                    $"Unable to open the project page: {ex.Message}");
             }
         }
 
@@ -3860,6 +4097,8 @@ namespace SpyxysDPSMeter
             public bool UseThrottledPlatinumRate { get; set; } = true;
             public bool AlwaysShowGroupMembers { get; set; } = true;
             public bool ShowMainAssistIndicators { get; set; } = true;
+            public string LogDirectory { get; set; } =
+                DefaultLogDirectory;
             public string? MainAssistName { get; set; }
             public List<string> ManualGroupMembers { get; set; } = new();
         }

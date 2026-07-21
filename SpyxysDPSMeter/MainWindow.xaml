@@ -156,6 +156,20 @@
                                               StaysOpenOnClick="True"
                                               Click="DisplaySettingMenuItem_Click"/>
                                     <Separator/>
+                                    <MenuItem x:Name="LogDirectoryMenuItem"
+                                              Header="Log Directory">
+                                        <MenuItem x:Name="CurrentLogDirectoryMenuItem"
+                                                  Header="Current: Logs"
+                                                  IsEnabled="False"
+                                                  ToolTipService.ShowOnDisabled="True"/>
+                                        <Separator/>
+                                        <MenuItem Header="Change Log Directory..."
+                                                  Click="ChangeLogDirectoryMenuItem_Click"/>
+                                        <MenuItem x:Name="RevertLogDirectoryMenuItem"
+                                                  Header="Revert to Default"
+                                                  Click="RevertLogDirectoryMenuItem_Click"/>
+                                    </MenuItem>
+                                    <Separator/>
                                     <MenuItem x:Name="TagGroupMemberMenuItem"
                                               Header="Tag Group Member"/>
                                     <MenuItem x:Name="RemoveGroupMemberMenuItem"
@@ -477,13 +491,34 @@
                 <Border Grid.Row="2"
                         Background="#CC20242A"
                         CornerRadius="0,0,8,8">
-                    <TextBlock x:Name="StatusText"
-                               Margin="10,0"
-                               VerticalAlignment="Center"
-                               Foreground="#FF9EA6AF"
-                               FontSize="10"
-                               TextTrimming="CharacterEllipsis"
-                               Text="Looking for the newest EverQuest Legends log..."/>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <TextBlock x:Name="StatusText"
+                                   Grid.Column="0"
+                                   Margin="10,0,8,0"
+                                   VerticalAlignment="Center"
+                                   Foreground="#FF9EA6AF"
+                                   FontSize="10"
+                                   TextTrimming="CharacterEllipsis"
+                                   Text="Looking for the newest EverQuest Legends log..."/>
+
+                        <TextBlock Grid.Column="1"
+                                   Margin="8,0,10,0"
+                                   VerticalAlignment="Center"
+                                   FontSize="10">
+                            <Hyperlink NavigateUri="https://github.com/khadesh/SpyxysDPSMeter"
+                                       RequestNavigate="ProjectLink_RequestNavigate"
+                                       ToolTip="https://github.com/khadesh/SpyxysDPSMeter"
+                                       Foreground="#FF72B7FF"
+                                       TextDecorations="None">
+                                Spyxy's DPS Meter
+                            </Hyperlink>
+                        </TextBlock>
+                    </Grid>
                 </Border>
             </Grid>
         </Border>

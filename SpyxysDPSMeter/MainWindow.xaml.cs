@@ -9,6 +9,7 @@ using System.Linq;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using System.Threading;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -38,6 +39,12 @@ namespace SpyxysDPSMeter
         private const int CrowdControlCastIndicatorSeconds = 4;
         private const int CrowdControlLandedIndicatorSeconds = 6;
         private const int RecentCrowdControlCastSeconds = 6;
+        private const int WindowPlacementSaveDelayMilliseconds = 400;
+
+        private const string SingleInstanceMutexName =
+            @"Local\SpyxysDPSMeter.SingleInstance";
+        private const string SingleInstanceActivationEventName =
+            @"Local\SpyxysDPSMeter.ActivateExisting";
 
         private static readonly string SettingsFilePath =
             Path.Combine(AppContext.BaseDirectory, "settings.json");
@@ -413,14 +420,23 @@ namespace SpyxysDPSMeter
         private static readonly global::System.Windows.Media.Brush StunIndicatorBrush =
             FrozenBrush(255, 200, 107, 255);
 
+        private static Mutex? _singleInstanceMutex;
+        private static EventWaitHandle? _singleInstanceActivationEvent;
+        private static RegisteredWaitHandle? _singleInstanceActivationRegistration;
+        private static MainWindow? _primaryWindow;
+        private static bool _singleInstanceInitialized;
+
         private readonly ObservableCollection<DamageRow> _rows = new();
         private readonly DispatcherTimer _readTimer;
         private readonly DispatcherTimer _fileScanTimer;
+        private readonly DispatcherTimer _windowSettingsSaveTimer;
 
         private global::System.Windows.Forms.NotifyIcon? _trayIcon;
         private global::System.Windows.Forms.ContextMenuStrip? _trayMenu;
         private global::System.Drawing.Icon? _trayIconImage;
         private bool _exitRequested;
+        private bool _windowHasLoaded;
+        private bool _isApplyingWindowPlacement;
 
         private readonly List<DamageEvent> _fightDamageEvents = new();
         private readonly List<ExperienceEvent> _experienceEvents = new();
@@ -480,12 +496,27 @@ namespace SpyxysDPSMeter
 
         public MainWindow()
         {
+            EnsureSingleInstanceOrExit();
+
             InitializeComponent();
+            _primaryWindow = this;
 
             DpsGrid.ItemsSource = _rows;
 
+            _windowSettingsSaveTimer =
+                new DispatcherTimer(DispatcherPriority.Background)
+                {
+                    Interval = TimeSpan.FromMilliseconds(
+                        WindowPlacementSaveDelayMilliseconds)
+                };
+            _windowSettingsSaveTimer.Tick +=
+                WindowSettingsSaveTimer_Tick;
+
             LoadSettings();
             ApplySettingsToMenuItems();
+
+            LocationChanged += WindowPlacementChanged;
+            SizeChanged += WindowPlacementChanged;
 
             _readTimer = new DispatcherTimer(DispatcherPriority.Background)
             {
@@ -500,10 +531,14 @@ namespace SpyxysDPSMeter
             _fileScanTimer.Tick += FileScanTimer_Tick;
 
             InitializeTrayIcon();
+            StartSingleInstanceActivationListener();
         }
 
         private void Window_Loaded(object sender, RoutedEventArgs e)
         {
+            _windowHasLoaded = true;
+            EnsureWindowVisible();
+
             DetectLatestLogFile();
             _readTimer.Start();
             _fileScanTimer.Start();
@@ -527,8 +562,350 @@ namespace SpyxysDPSMeter
         {
             _readTimer.Stop();
             _fileScanTimer.Stop();
+            _windowSettingsSaveTimer.Stop();
+
             SaveSettings();
             DisposeTrayIcon();
+            DisposeSingleInstanceResources();
+        }
+
+
+        private static void EnsureSingleInstanceOrExit()
+        {
+            if (_singleInstanceInitialized)
+            {
+                return;
+            }
+
+            _singleInstanceInitialized = true;
+
+            try
+            {
+                _singleInstanceMutex =
+                    new Mutex(
+                        initiallyOwned: false,
+                        SingleInstanceMutexName,
+                        out bool createdNew);
+
+                if (!createdNew)
+                {
+                    SignalExistingInstance();
+                    Environment.Exit(0);
+                    return;
+                }
+
+                _singleInstanceActivationEvent =
+                    new EventWaitHandle(
+                        initialState: false,
+                        EventResetMode.AutoReset,
+                        SingleInstanceActivationEventName);
+            }
+            catch
+            {
+                // If Windows refuses the named synchronization objects,
+                // continue normally rather than preventing the meter from
+                // starting at all.
+            }
+        }
+
+        private static void SignalExistingInstance()
+        {
+            for (int attempt = 0; attempt < 20; attempt++)
+            {
+                try
+                {
+                    using EventWaitHandle activationEvent =
+                        EventWaitHandle.OpenExisting(
+                            SingleInstanceActivationEventName);
+
+                    activationEvent.Set();
+                    return;
+                }
+                catch (WaitHandleCannotBeOpenedException)
+                {
+                    Thread.Sleep(50);
+                }
+                catch
+                {
+                    return;
+                }
+            }
+        }
+
+        private static void StartSingleInstanceActivationListener()
+        {
+            if (_singleInstanceActivationEvent == null ||
+                _singleInstanceActivationRegistration != null)
+            {
+                return;
+            }
+
+            _singleInstanceActivationRegistration =
+                ThreadPool.RegisterWaitForSingleObject(
+                    _singleInstanceActivationEvent,
+                    static (_, timedOut) =>
+                    {
+                        if (timedOut)
+                        {
+                            return;
+                        }
+
+                        global::System.Windows.Application? application =
+                            global::System.Windows.Application.Current;
+
+                        if (application == null ||
+                            application.Dispatcher.HasShutdownStarted ||
+                            application.Dispatcher.HasShutdownFinished)
+                        {
+                            return;
+                        }
+
+                        application.Dispatcher.BeginInvoke(
+                            DispatcherPriority.Send,
+                            new Action(
+                                () =>
+                                    _primaryWindow?
+                                        .RestoreFromSecondInstance()));
+                    },
+                    state: null,
+                    millisecondsTimeOutInterval: Timeout.Infinite,
+                    executeOnlyOnce: false);
+        }
+
+        private void RestoreFromSecondInstance()
+        {
+            ShowFromSystemTray();
+
+            Dispatcher.BeginInvoke(
+                DispatcherPriority.ApplicationIdle,
+                new Action(
+                    () =>
+                    {
+                        if (WindowState == WindowState.Minimized)
+                        {
+                            WindowState = WindowState.Normal;
+                        }
+
+                        Activate();
+                        Focus();
+                    }));
+        }
+
+        private static void DisposeSingleInstanceResources()
+        {
+            _primaryWindow = null;
+
+            _singleInstanceActivationRegistration?
+                .Unregister(null);
+            _singleInstanceActivationRegistration = null;
+
+            _singleInstanceActivationEvent?.Dispose();
+            _singleInstanceActivationEvent = null;
+
+            _singleInstanceMutex?.Dispose();
+            _singleInstanceMutex = null;
+        }
+
+
+        private void WindowPlacementChanged(
+            object? sender,
+            EventArgs e)
+        {
+            QueueWindowPlacementSave();
+        }
+
+        private void QueueWindowPlacementSave()
+        {
+            if (!_windowHasLoaded ||
+                _isApplyingWindowPlacement ||
+                WindowState != WindowState.Normal)
+            {
+                return;
+            }
+
+            _windowSettingsSaveTimer.Stop();
+            _windowSettingsSaveTimer.Start();
+        }
+
+        private void WindowSettingsSaveTimer_Tick(
+            object? sender,
+            EventArgs e)
+        {
+            _windowSettingsSaveTimer.Stop();
+            SaveSettings();
+        }
+
+        private void ApplySavedWindowPlacement(
+            MeterSettings settings)
+        {
+            _isApplyingWindowPlacement = true;
+
+            try
+            {
+                if (IsValidWindowDimension(
+                        settings.WindowWidth,
+                        MinWidth))
+                {
+                    Width = settings.WindowWidth!.Value;
+                }
+
+                if (IsValidWindowDimension(
+                        settings.WindowHeight,
+                        MinHeight))
+                {
+                    Height = settings.WindowHeight!.Value;
+                }
+
+                if (IsFinite(settings.WindowLeft) &&
+                    IsFinite(settings.WindowTop))
+                {
+                    WindowStartupLocation =
+                        WindowStartupLocation.Manual;
+                    Left = settings.WindowLeft!.Value;
+                    Top = settings.WindowTop!.Value;
+                }
+            }
+            finally
+            {
+                _isApplyingWindowPlacement = false;
+            }
+        }
+
+        private void EnsureWindowVisible()
+        {
+            if (!IsFinite(Left) ||
+                !IsFinite(Top))
+            {
+                return;
+            }
+
+            double width =
+                ActualWidth > 0
+                    ? ActualWidth
+                    : Width;
+            double height =
+                ActualHeight > 0
+                    ? ActualHeight
+                    : Height;
+
+            if (!IsValidWindowDimension(width, MinWidth) ||
+                !IsValidWindowDimension(height, MinHeight))
+            {
+                return;
+            }
+
+            global::System.Drawing.Rectangle windowRectangle =
+                new(
+                    (int)Math.Floor(Left),
+                    (int)Math.Floor(Top),
+                    Math.Max(1, (int)Math.Ceiling(width)),
+                    Math.Max(1, (int)Math.Ceiling(height)));
+
+            bool sufficientlyVisible =
+                global::System.Windows.Forms.Screen.AllScreens
+                    .Any(
+                        screen =>
+                        {
+                            global::System.Drawing.Rectangle intersection =
+                                global::System.Drawing.Rectangle.Intersect(
+                                    windowRectangle,
+                                    screen.WorkingArea);
+
+                            return intersection.Width >= 80 &&
+                                   intersection.Height >= 38;
+                        });
+
+            if (sufficientlyVisible)
+            {
+                return;
+            }
+
+            _isApplyingWindowPlacement = true;
+
+            try
+            {
+                Rect workArea =
+                    SystemParameters.WorkArea;
+
+                Left =
+                    workArea.Left +
+                    Math.Max(
+                        0,
+                        (workArea.Width - width) / 2);
+                Top =
+                    workArea.Top +
+                    Math.Max(
+                        0,
+                        (workArea.Height - height) / 2);
+            }
+            finally
+            {
+                _isApplyingWindowPlacement = false;
+            }
+
+            QueueWindowPlacementSave();
+        }
+
+        private Rect GetWindowPlacementBounds()
+        {
+            Rect bounds =
+                WindowState == WindowState.Normal
+                    ? new Rect(
+                        Left,
+                        Top,
+                        ActualWidth > 0
+                            ? ActualWidth
+                            : Width,
+                        ActualHeight > 0
+                            ? ActualHeight
+                            : Height)
+                    : RestoreBounds;
+
+            if (!IsFinite(bounds.Left) ||
+                !IsFinite(bounds.Top) ||
+                !IsValidWindowDimension(
+                    bounds.Width,
+                    MinWidth) ||
+                !IsValidWindowDimension(
+                    bounds.Height,
+                    MinHeight))
+            {
+                return Rect.Empty;
+            }
+
+            return bounds;
+        }
+
+        private static bool IsFinite(
+            double value)
+        {
+            return !double.IsNaN(value) &&
+                   !double.IsInfinity(value);
+        }
+
+        private static bool IsFinite(
+            double? value)
+        {
+            return value.HasValue &&
+                   IsFinite(value.Value);
+        }
+
+        private static bool IsValidWindowDimension(
+            double value,
+            double minimum)
+        {
+            return IsFinite(value) &&
+                   value >= minimum;
+        }
+
+        private static bool IsValidWindowDimension(
+            double? value,
+            double minimum)
+        {
+            return value.HasValue &&
+                   IsValidWindowDimension(
+                       value.Value,
+                       minimum);
         }
 
         private void FileScanTimer_Tick(object? sender, EventArgs e)
@@ -595,6 +972,9 @@ namespace SpyxysDPSMeter
 
         private void HideToSystemTray()
         {
+            _windowSettingsSaveTimer.Stop();
+            SaveSettings();
+
             ShowInTaskbar = false;
             Hide();
         }
@@ -3355,9 +3735,18 @@ namespace SpyxysDPSMeter
             object sender,
             MouseButtonEventArgs e)
         {
-            if (e.ChangedButton == MouseButton.Left)
+            if (e.ChangedButton != MouseButton.Left)
+            {
+                return;
+            }
+
+            try
             {
                 DragMove();
+            }
+            finally
+            {
+                QueueWindowPlacementSave();
             }
         }
 
@@ -3910,6 +4299,8 @@ namespace SpyxysDPSMeter
                         _manualGroupMembers.Add(trimmed);
                     }
                 }
+
+                ApplySavedWindowPlacement(settings);
             }
             catch (Exception ex)
             {
@@ -3951,6 +4342,9 @@ namespace SpyxysDPSMeter
         {
             try
             {
+                Rect windowBounds =
+                    GetWindowPlacementBounds();
+
                 MeterSettings settings = new()
                 {
                     ShowPlayerName = _showPlayerName,
@@ -3973,6 +4367,22 @@ namespace SpyxysDPSMeter
                         _showMainAssistIndicators,
                     LogDirectory =
                         _logDirectory,
+                    WindowLeft =
+                        windowBounds.IsEmpty
+                            ? null
+                            : windowBounds.Left,
+                    WindowTop =
+                        windowBounds.IsEmpty
+                            ? null
+                            : windowBounds.Top,
+                    WindowWidth =
+                        windowBounds.IsEmpty
+                            ? null
+                            : windowBounds.Width,
+                    WindowHeight =
+                        windowBounds.IsEmpty
+                            ? null
+                            : windowBounds.Height,
                     MainAssistName =
                         _mainAssistName,
                     ManualGroupMembers = _manualGroupMembers
@@ -4099,6 +4509,10 @@ namespace SpyxysDPSMeter
             public bool ShowMainAssistIndicators { get; set; } = true;
             public string LogDirectory { get; set; } =
                 DefaultLogDirectory;
+            public double? WindowLeft { get; set; }
+            public double? WindowTop { get; set; }
+            public double? WindowWidth { get; set; }
+            public double? WindowHeight { get; set; }
             public string? MainAssistName { get; set; }
             public List<string> ManualGroupMembers { get; set; } = new();
         }

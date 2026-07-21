@@ -27,6 +27,14 @@ namespace SpyxysDPSMeter
         private const int PlatinumHistoryMinutes = 60;
         private const int PlatinumRateWindowMinutes = 3;
 
+        private const int HealingCastIndicatorSeconds = 4;
+        private const int HealingReceivedIndicatorSeconds = 3;
+        private const int LayOnHandsRecipientSeconds = 10;
+        private const int LayOnHandsCasterSeconds = 12;
+        private const int CrowdControlCastIndicatorSeconds = 4;
+        private const int CrowdControlLandedIndicatorSeconds = 6;
+        private const int RecentCrowdControlCastSeconds = 6;
+
         private static readonly string SettingsFilePath =
             Path.Combine(AppContext.BaseDirectory, "settings.json");
 
@@ -158,6 +166,215 @@ namespace SpyxysDPSMeter
             @"Your group has been disbanded|You disband the group)[.!]$",
             RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
+        private static readonly Regex SelfSpellCastRegex = new(
+            @"^You begin(?:s)? (?:casting|singing) (?<spell>.+?)[.!]$",
+            RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+        private static readonly Regex OtherSpellCastRegex = new(
+            @"^(?<caster>.+?) begins? (?:casting|singing) (?<spell>.+?)[.!]$",
+            RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+        private static readonly Regex OldSpellCastRegex = new(
+            @"^(?<caster>.+?) begins? to cast a spell[.!]\s*<(?<spell>.+?)>[.!]?$",
+            RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+        private static readonly Regex SpecialAbilityRegex = new(
+            @"^(?<caster>You|.+?) (?:activate|activates|use|uses) " +
+            @"(?<spell>Lay (?:on|of) Hands.*?)[.!]$",
+            RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+        private static readonly Regex DirectHealRegex = new(
+            @"^(?<healer>.+?) healed (?<target>.+?)(?<hot> over time)? for " +
+            @"(?<amount>\d+)(?: \(\d+\))? hit points(?: by (?<spell>.+?))?[.!]" +
+            @"(?: \((?<modifier>[^)]+)\))?$",
+            RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+        private static readonly Regex PassiveHealRegex = new(
+            @"^(?<target>.+?) has been healed(?<hot> over time)? for " +
+            @"(?<amount>\d+)(?: \(\d+\))? hit points(?: by (?<spell>.+?))?[.!]" +
+            @"(?: \((?<modifier>[^)]+)\))?$",
+            RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+        private static readonly Regex LegacyHealRegex = new(
+            @"^(?<target>You|.+?) (?:have|has) been healed for (?<amount>\d+) " +
+            @"points?(?: of damage)?(?: by (?<healer>.+?))?[.!]$",
+            RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+        private static readonly Regex ReceivedSpellRegex = new(
+            @"^(?<target>.+?) (?:is targeted by|becomes the target of) " +
+            @"(?<spell>.+?)[.!]$",
+            RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+
+        private static readonly HashSet<string> HealingSpellNames =
+            new(StringComparer.OrdinalIgnoreCase)
+            {
+                "Heal",
+                "Minor Healing",
+                "Light Healing",
+                "Healing",
+                "Greater Healing",
+                "Superior Healing",
+                "Complete Healing",
+                "Remedy",
+                "Divine Light",
+                "Celestial Healing",
+                "Word of Healing",
+                "Word of Health",
+                "Chloroplast",
+                "Chloroblast",
+                "Nature's Touch",
+                "Nature's Infusion",
+                "Karana's Renewal",
+                "Tunare's Renewal",
+                "Salve",
+                "Torpor",
+                "Quiescence",
+                "Impassivity",
+                "Nonchalance",
+                "Stoicism",
+                "Flowering Heal",
+                "Celestial Health",
+                "Celestial Echo",
+                "Healing Light",
+                "Spirit Salve",
+                "Kragg's Salve",
+                "Bloom",
+                "Blooming Heal",
+                "Snails Healing",
+                "Tortoises Healing",
+                "Slugs Healing",
+                "Lay on Hands",
+                "Lay of Hands"
+            };
+
+        private static readonly string[] HealingSpellFragments =
+        {
+            " heal",
+            "healing",
+            "remedy",
+            "renewal",
+            "restoration",
+            "rejuven",
+            "mending",
+            "mend ",
+            "salve",
+            "chloroblast",
+            "chloroplast",
+            "nature's touch",
+            "nature's infusion",
+            "celestial",
+            "divine light",
+            "word of health",
+            "word of healing",
+            "torpor",
+            "quiescence",
+            "recuper",
+            "regrowth",
+            "regeneration",
+            "regenerate",
+            "bloom"
+        };
+
+        private static readonly HashSet<string> CharmSpellNames =
+            new(StringComparer.OrdinalIgnoreCase)
+            {
+                "Charm",
+                "Beguile",
+                "Cajoling Whispers",
+                "Allure",
+                "Boltran's Agacerie",
+                "Dictate",
+                "Dominate",
+                "Domination",
+                "Coerce",
+                "Alluring Whispers",
+                "Solon's Song of the Sirens"
+            };
+
+        private static readonly HashSet<string> RootSpellNames =
+            new(StringComparer.OrdinalIgnoreCase)
+            {
+                "Root",
+                "Grasping Roots",
+                "Ensnaring Roots",
+                "Engulfing Roots",
+                "Immobilize",
+                "Paralyzing Earth",
+                "Fetter",
+                "Bonds of Force",
+                "Earthen Roots",
+                "Vinelash"
+            };
+
+        private static readonly HashSet<string> LullSpellNames =
+            new(StringComparer.OrdinalIgnoreCase)
+            {
+                "Lull",
+                "Soothe",
+                "Calm",
+                "Pacify",
+                "Harmony",
+                "Harmony of Nature",
+                "Wake of Tranquility",
+                "Kelin's Lugubrious Lament"
+            };
+
+        private static readonly HashSet<string> MesmerizeSpellNames =
+            new(StringComparer.OrdinalIgnoreCase)
+            {
+                "Mesmerize",
+                "Enthrall",
+                "Mesmerization",
+                "Entrance",
+                "Entrancing Lights",
+                "Dazzle",
+                "Fascination",
+                "Glamour of Kintaz",
+                "Glamour",
+                "Rapture",
+                "Kelin's Lucid Lullaby",
+                "Crission's Pixie Strike"
+            };
+
+        private static readonly HashSet<string> AreaMesmerizeSpellNames =
+            new(StringComparer.OrdinalIgnoreCase)
+            {
+                "Mesmerization",
+                "Entrancing Lights",
+                "Fascination",
+                "Kelin's Lucid Lullaby"
+            };
+
+        private static readonly HashSet<string> StunSpellNames =
+            new(StringComparer.OrdinalIgnoreCase)
+            {
+                "Stun",
+                "Holy Might",
+                "Force",
+                "Sound of Force",
+                "Sanity Warp",
+                "Chaos Flux",
+                "Anarchy",
+                "Dyn's Dizzying Draught",
+                "Whirl Till You Hurl",
+                "Color Flux",
+                "Color Shift",
+                "Color Skew",
+                "Color Slant",
+                "Color Shock"
+            };
+
+        private static readonly HashSet<string> AreaStunSpellNames =
+            new(StringComparer.OrdinalIgnoreCase)
+            {
+                "Color Flux",
+                "Color Shift",
+                "Color Skew",
+                "Color Slant",
+                "Color Shock"
+            };
+
         private static readonly string[] TimestampFormats =
         {
             "ddd MMM d HH:mm:ss yyyy",
@@ -178,6 +395,19 @@ namespace SpyxysDPSMeter
 
         private static readonly global::System.Windows.Media.Brush FriendlyRowBrush = FrozenBrush(90, 37, 76, 115);
         private static readonly global::System.Windows.Media.Brush FriendlyTextBrush = FrozenBrush(255, 161, 207, 255);
+
+        private static readonly global::System.Windows.Media.Brush HealingIndicatorBrush =
+            FrozenBrush(255, 89, 255, 138);
+        private static readonly global::System.Windows.Media.Brush CharmIndicatorBrush =
+            FrozenBrush(255, 255, 79, 216);
+        private static readonly global::System.Windows.Media.Brush RootIndicatorBrush =
+            FrozenBrush(255, 255, 157, 46);
+        private static readonly global::System.Windows.Media.Brush LullIndicatorBrush =
+            FrozenBrush(255, 255, 59, 59);
+        private static readonly global::System.Windows.Media.Brush MesmerizeIndicatorBrush =
+            FrozenBrush(255, 49, 230, 208);
+        private static readonly global::System.Windows.Media.Brush StunIndicatorBrush =
+            FrozenBrush(255, 200, 107, 255);
 
         private readonly ObservableCollection<DamageRow> _rows = new();
         private readonly DispatcherTimer _readTimer;
@@ -201,6 +431,14 @@ namespace SpyxysDPSMeter
         private readonly HashSet<string> _manualGroupMembers =
             new(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, TargetEvent> _latestTargets =
+            new(StringComparer.OrdinalIgnoreCase);
+
+        private readonly List<SpecialIndicatorEvent> _specialIndicatorEvents = new();
+        private readonly List<RecentCrowdControlCast> _recentCrowdControlCasts = new();
+        private readonly List<RecentLayOnHandsCast> _recentLayOnHandsCasts = new();
+        private readonly Dictionary<string, DateTime> _healingAnimationUntil =
+            new(StringComparer.OrdinalIgnoreCase);
+        private readonly HashSet<string> _learnedHealingSpellNames =
             new(StringComparer.OrdinalIgnoreCase);
 
         private string? _activeFilePath;
@@ -655,6 +893,14 @@ namespace SpyxysDPSMeter
                 return;
             }
 
+            if (TryHandleSpecialCombatMessage(
+                    message,
+                    timestamp,
+                    isInitialLoad))
+            {
+                return;
+            }
+
             Match petMatch = PetAttackRegex.Match(message);
             if (petMatch.Success)
             {
@@ -969,6 +1215,1187 @@ namespace SpyxysDPSMeter
             }
         }
 
+        private bool TryHandleSpecialCombatMessage(
+            string message,
+            DateTime logTimestamp,
+            bool isInitialLoad)
+        {
+            if (TryParseSpellCast(message, out ParsedSpellCast? spellCast))
+            {
+                if (!isInitialLoad)
+                {
+                    HandleSpellCastVisual(spellCast!, logTimestamp);
+                }
+
+                return true;
+            }
+
+            if (TryParseHealEvent(message, out ParsedHealEvent? healEvent))
+            {
+                if (!string.IsNullOrWhiteSpace(healEvent.Spell))
+                {
+                    _learnedHealingSpellNames.Add(
+                        NormalizeSpellNameForClassification(
+                            healEvent.Spell));
+                }
+
+                if (!isInitialLoad)
+                {
+                    HandleHealVisual(healEvent!, logTimestamp);
+                }
+
+                return true;
+            }
+
+            Match receivedSpellMatch = ReceivedSpellRegex.Match(message);
+            if (receivedSpellMatch.Success)
+            {
+                string spellName =
+                    receivedSpellMatch.Groups["spell"].Value;
+
+                if (TryClassifyCrowdControlSpell(
+                        spellName,
+                        out CrowdControlType type,
+                        out bool isAreaEffect))
+                {
+                    if (!isInitialLoad)
+                    {
+                        string target = NormalizeVisualEntity(
+                            receivedSpellMatch.Groups["target"].Value,
+                            null);
+
+                        AddCrowdControlLandedIndicator(
+                            target,
+                            type,
+                            isAreaEffect,
+                            logTimestamp);
+                    }
+
+                    return true;
+                }
+            }
+
+            if (TryParseCrowdControlLanding(
+                    message,
+                    out string landedTarget,
+                    out CrowdControlType landedType,
+                    out bool? areaEffectHint))
+            {
+                if (!isInitialLoad)
+                {
+                    bool isAreaEffect =
+                        ResolveRecentAreaEffectHint(
+                            landedType,
+                            areaEffectHint);
+
+                    AddCrowdControlLandedIndicator(
+                        landedTarget,
+                        landedType,
+                        isAreaEffect,
+                        logTimestamp);
+                }
+
+                return true;
+            }
+
+            return false;
+        }
+
+        private bool TryParseSpellCast(
+            string message,
+            out ParsedSpellCast? spellCast)
+        {
+            Match match = SelfSpellCastRegex.Match(message);
+            if (match.Success)
+            {
+                spellCast = new ParsedSpellCast(
+                    _characterName,
+                    CleanSpellName(match.Groups["spell"].Value));
+                return true;
+            }
+
+            match = OtherSpellCastRegex.Match(message);
+            if (match.Success)
+            {
+                spellCast = new ParsedSpellCast(
+                    NormalizeVisualEntity(
+                        match.Groups["caster"].Value,
+                        null),
+                    CleanSpellName(match.Groups["spell"].Value));
+                return true;
+            }
+
+            match = OldSpellCastRegex.Match(message);
+            if (match.Success)
+            {
+                spellCast = new ParsedSpellCast(
+                    NormalizeVisualEntity(
+                        match.Groups["caster"].Value,
+                        null),
+                    CleanSpellName(match.Groups["spell"].Value));
+                return true;
+            }
+
+            match = SpecialAbilityRegex.Match(message);
+            if (match.Success)
+            {
+                spellCast = new ParsedSpellCast(
+                    NormalizeVisualEntity(
+                        match.Groups["caster"].Value,
+                        null),
+                    CleanSpellName(match.Groups["spell"].Value));
+                return true;
+            }
+
+            spellCast = null;
+            return false;
+        }
+
+        private bool TryParseHealEvent(
+            string message,
+            out ParsedHealEvent? healEvent)
+        {
+            Match match = DirectHealRegex.Match(message);
+            if (match.Success)
+            {
+                string healer = NormalizeVisualEntity(
+                    match.Groups["healer"].Value,
+                    null);
+
+                string target = NormalizeVisualEntity(
+                    match.Groups["target"].Value,
+                    healer);
+
+                healEvent = new ParsedHealEvent(
+                    healer,
+                    target,
+                    CleanSpellName(
+                        match.Groups["spell"].Value));
+
+                return true;
+            }
+
+            match = PassiveHealRegex.Match(message);
+            if (match.Success)
+            {
+                string target = NormalizeVisualEntity(
+                    match.Groups["target"].Value,
+                    null);
+
+                healEvent = new ParsedHealEvent(
+                    null,
+                    target,
+                    CleanSpellName(
+                        match.Groups["spell"].Value));
+
+                return true;
+            }
+
+            match = LegacyHealRegex.Match(message);
+            if (match.Success)
+            {
+                string? healer =
+                    match.Groups["healer"].Success
+                        ? NormalizeVisualEntity(
+                            match.Groups["healer"].Value,
+                            null)
+                        : null;
+
+                string target = NormalizeVisualEntity(
+                    match.Groups["target"].Value,
+                    healer);
+
+                healEvent = new ParsedHealEvent(
+                    healer,
+                    target,
+                    string.Empty);
+
+                return true;
+            }
+
+            healEvent = null;
+            return false;
+        }
+
+        private void HandleSpellCastVisual(
+            ParsedSpellCast spellCast,
+            DateTime logTimestamp)
+        {
+            string caster = spellCast.Caster;
+            string spellName = spellCast.Spell;
+
+            if (string.IsNullOrWhiteSpace(caster) ||
+                string.IsNullOrWhiteSpace(spellName))
+            {
+                return;
+            }
+
+            if (IsLayOnHandsSpell(spellName))
+            {
+                _recentLayOnHandsCasts.Add(
+                    new RecentLayOnHandsCast(
+                        caster,
+                        DateTime.Now.AddSeconds(4)));
+
+                if (IsHostileEntity(caster))
+                {
+                    string correlationKey =
+                        BuildLayOnHandsCorrelationKey(
+                            caster,
+                            caster);
+
+                    AddSpecialIndicator(
+                        caster,
+                        "<<",
+                        HealingIndicatorBrush,
+                        "Lay on Hands received",
+                        LayOnHandsRecipientSeconds,
+                        logTimestamp,
+                        correlationKey,
+                        dedupeSeconds: 2);
+
+                    ExtendHealingAnimation(
+                        caster,
+                        LayOnHandsRecipientSeconds);
+                }
+
+                return;
+            }
+
+            if (IsHealingSpellName(spellName))
+            {
+                AddSpecialIndicator(
+                    caster,
+                    ">",
+                    HealingIndicatorBrush,
+                    "Casting a healing spell",
+                    HealingCastIndicatorSeconds,
+                    logTimestamp);
+            }
+
+            if (!TryClassifyCrowdControlSpell(
+                    spellName,
+                    out CrowdControlType type,
+                    out bool isAreaEffect))
+            {
+                return;
+            }
+
+            AddSpecialIndicator(
+                caster,
+                GetCrowdControlGlyph(type, isAreaEffect),
+                GetCrowdControlBrush(type),
+                $"{GetCrowdControlLabel(type)} cast",
+                CrowdControlCastIndicatorSeconds,
+                logTimestamp);
+
+            _recentCrowdControlCasts.Add(
+                new RecentCrowdControlCast(
+                    type,
+                    isAreaEffect,
+                    DateTime.Now.AddSeconds(
+                        RecentCrowdControlCastSeconds)));
+        }
+
+        private void HandleHealVisual(
+            ParsedHealEvent healEvent,
+            DateTime logTimestamp)
+        {
+            string target = healEvent.Target;
+            string? healer = healEvent.Healer;
+            string spellName = healEvent.Spell;
+
+            if (string.IsNullOrWhiteSpace(target))
+            {
+                return;
+            }
+
+            bool spellIsLayOnHands =
+                IsLayOnHandsSpell(spellName);
+
+            string? matchedLayOnHandsCaster =
+                TryConsumeRecentLayOnHandsCaster(
+                    healer,
+                    allowUnknownHealer: spellIsLayOnHands);
+
+            if (string.IsNullOrWhiteSpace(healer) &&
+                !string.IsNullOrWhiteSpace(
+                    matchedLayOnHandsCaster))
+            {
+                healer = matchedLayOnHandsCaster;
+            }
+
+            bool isLayOnHands =
+                spellIsLayOnHands ||
+                !string.IsNullOrWhiteSpace(
+                    matchedLayOnHandsCaster);
+
+            if (isLayOnHands)
+            {
+                bool targetIsRelevant =
+                    IsSelf(target) ||
+                    IsGroupMember(target) ||
+                    (!string.IsNullOrWhiteSpace(healer) &&
+                     target.Equals(
+                         healer,
+                         StringComparison.OrdinalIgnoreCase));
+
+                if (targetIsRelevant)
+                {
+                    string correlationKey =
+                        BuildLayOnHandsCorrelationKey(
+                            healer,
+                            target);
+
+                    AddSpecialIndicator(
+                        target,
+                        "<<",
+                        HealingIndicatorBrush,
+                        "Lay on Hands received",
+                        LayOnHandsRecipientSeconds,
+                        logTimestamp,
+                        correlationKey,
+                        dedupeSeconds: 2);
+
+                    ExtendHealingAnimation(
+                        target,
+                        LayOnHandsRecipientSeconds);
+                }
+
+                if (!string.IsNullOrWhiteSpace(healer) &&
+                    !healer.Equals(
+                        target,
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    AddSpecialIndicator(
+                        healer,
+                        ">>",
+                        HealingIndicatorBrush,
+                        $"Cast Lay on Hands on {target}",
+                        LayOnHandsCasterSeconds,
+                        logTimestamp);
+                }
+
+                return;
+            }
+
+            if (IsSelf(target) || IsGroupMember(target))
+            {
+                AddSpecialIndicator(
+                    target,
+                    "<",
+                    HealingIndicatorBrush,
+                    string.IsNullOrWhiteSpace(spellName)
+                        ? "Healing received"
+                        : $"Hit by {spellName}",
+                    HealingReceivedIndicatorSeconds,
+                    logTimestamp);
+            }
+        }
+
+        private string? TryConsumeRecentLayOnHandsCaster(
+            string? healer,
+            bool allowUnknownHealer)
+        {
+            DateTime now = DateTime.Now;
+
+            int index = -1;
+
+            if (!string.IsNullOrWhiteSpace(healer))
+            {
+                index = _recentLayOnHandsCasts.FindLastIndex(
+                    entry =>
+                        entry.ExpiresAt > now &&
+                        entry.Caster.Equals(
+                            healer,
+                            StringComparison.OrdinalIgnoreCase));
+            }
+            else if (allowUnknownHealer)
+            {
+                index = _recentLayOnHandsCasts.FindLastIndex(
+                    entry => entry.ExpiresAt > now);
+            }
+
+            if (index < 0)
+            {
+                return null;
+            }
+
+            string caster =
+                _recentLayOnHandsCasts[index].Caster;
+
+            _recentLayOnHandsCasts.RemoveAt(index);
+            return caster;
+        }
+
+        private void AddCrowdControlLandedIndicator(
+            string target,
+            CrowdControlType type,
+            bool isAreaEffect,
+            DateTime logTimestamp)
+        {
+            if (string.IsNullOrWhiteSpace(target))
+            {
+                return;
+            }
+
+            AddSpecialIndicator(
+                target,
+                GetCrowdControlGlyph(type, isAreaEffect),
+                GetCrowdControlBrush(type),
+                $"{GetCrowdControlLabel(type)} landed",
+                CrowdControlLandedIndicatorSeconds,
+                logTimestamp);
+        }
+
+        private bool TryParseCrowdControlLanding(
+            string message,
+            out string target,
+            out CrowdControlType type,
+            out bool? areaEffectHint)
+        {
+            string normalized = message
+                .Trim()
+                .TrimEnd('.', '!')
+                .Replace('’', '\'');
+
+            if (normalized.Equals(
+                    "You have been charmed",
+                    StringComparison.OrdinalIgnoreCase) ||
+                normalized.Equals(
+                    "You are charmed",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                target = _characterName;
+                type = CrowdControlType.Charm;
+                areaEffectHint = false;
+                return true;
+            }
+
+            Match match = Regex.Match(
+                normalized,
+                @"^(?<target>.+?) (?:has been|is|becomes) charmed$",
+                RegexOptions.IgnoreCase);
+
+            if (match.Success)
+            {
+                target = NormalizeVisualEntity(
+                    match.Groups["target"].Value,
+                    null);
+                type = CrowdControlType.Charm;
+                areaEffectHint = false;
+                return true;
+            }
+
+            if (normalized.Equals(
+                    "Your feet become entwined",
+                    StringComparison.OrdinalIgnoreCase) ||
+                normalized.Equals(
+                    "Your feet adhere to the ground",
+                    StringComparison.OrdinalIgnoreCase) ||
+                normalized.Equals(
+                    "You are entrapped by roots",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                target = _characterName;
+                type = CrowdControlType.Root;
+                areaEffectHint = false;
+                return true;
+            }
+
+            match = Regex.Match(
+                normalized,
+                @"^(?<target>.+?)(?:'s)? feet become entwined$",
+                RegexOptions.IgnoreCase);
+
+            if (match.Success)
+            {
+                target = NormalizeVisualEntity(
+                    match.Groups["target"].Value,
+                    null);
+                type = CrowdControlType.Root;
+                areaEffectHint = false;
+                return true;
+            }
+
+            match = Regex.Match(
+                normalized,
+                @"^(?<target>.+?) " +
+                @"(?:is rooted|is entrapped by roots)$",
+                RegexOptions.IgnoreCase);
+
+            if (!match.Success)
+            {
+                match = Regex.Match(
+                    normalized,
+                    @"^(?<target>.+?)(?:'s)? " +
+                    @"(?:feet adhere to the ground|" +
+                    @"feet are stuck to the ground)$",
+                    RegexOptions.IgnoreCase);
+            }
+
+            if (match.Success)
+            {
+                target = NormalizeVisualEntity(
+                    match.Groups["target"].Value,
+                    null);
+                type = CrowdControlType.Root;
+                areaEffectHint = false;
+                return true;
+            }
+
+            if (normalized.Equals(
+                    "You feel your aggression subside",
+                    StringComparison.OrdinalIgnoreCase) ||
+                normalized.Equals(
+                    "You feel less aggressive",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                target = _characterName;
+                type = CrowdControlType.Lull;
+                areaEffectHint = false;
+                return true;
+            }
+
+            match = Regex.Match(
+                normalized,
+                @"^(?<target>.+?) " +
+                @"(?:looks less aggressive|is pacified|looks ambivalent)$",
+                RegexOptions.IgnoreCase);
+
+            if (match.Success)
+            {
+                target = NormalizeVisualEntity(
+                    match.Groups["target"].Value,
+                    null);
+                type = CrowdControlType.Lull;
+                areaEffectHint = false;
+                return true;
+            }
+
+            if (normalized.Equals(
+                    "You feel quite drowsy",
+                    StringComparison.OrdinalIgnoreCase) ||
+                normalized.StartsWith(
+                    "You swoon",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                target = _characterName;
+                type = CrowdControlType.Mesmerize;
+                areaEffectHint = null;
+                return true;
+            }
+
+            match = Regex.Match(
+                normalized,
+                @"^(?<target>.+?)(?:'s)? " +
+                @"(?:eyes glaze over|head nods)$",
+                RegexOptions.IgnoreCase);
+
+            if (!match.Success)
+            {
+                match = Regex.Match(
+                    normalized,
+                    @"^(?<target>.+?) " +
+                    @"(?:stands around looking utterly confused|" +
+                    @"swoons in raptured bliss|" +
+                    @"falls into an enchanted sleep|" +
+                    @"is mesmerized)$",
+                    RegexOptions.IgnoreCase);
+            }
+
+            if (match.Success)
+            {
+                target = NormalizeVisualEntity(
+                    match.Groups["target"].Value,
+                    null);
+                type = CrowdControlType.Mesmerize;
+                areaEffectHint = null;
+                return true;
+            }
+
+            if (normalized.Equals(
+                    "You are stunned by scintillating colors",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                target = _characterName;
+                type = CrowdControlType.Stun;
+                areaEffectHint = true;
+                return true;
+            }
+
+            if (normalized.Equals(
+                    "You are stunned",
+                    StringComparison.OrdinalIgnoreCase) ||
+                normalized.Equals(
+                    "You are struck by a sudden force",
+                    StringComparison.OrdinalIgnoreCase) ||
+                normalized.Equals(
+                    "You have been struck by the force of Ykesha",
+                    StringComparison.OrdinalIgnoreCase) ||
+                normalized.Equals(
+                    "You are knocked backwards by a concussion of air",
+                    StringComparison.OrdinalIgnoreCase) ||
+                normalized.Equals(
+                    "Reality runs amok",
+                    StringComparison.OrdinalIgnoreCase) ||
+                normalized.Equals(
+                    "You reel",
+                    StringComparison.OrdinalIgnoreCase) ||
+                normalized.Equals(
+                    "You begin to spin",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                target = _characterName;
+                type = CrowdControlType.Stun;
+                areaEffectHint = null;
+                return true;
+            }
+
+            match = Regex.Match(
+                normalized,
+                @"^(?<target>.+?) " +
+                @"(?:is stunned|" +
+                @"has been stunned|" +
+                @"is struck by a sudden force|" +
+                @"has been struck by the force of Ykesha|" +
+                @"is knocked backwards by a concussion of air|" +
+                @"begins to spin|" +
+                @"reels|" +
+                @"looks delirious|" +
+                @"is surrounded by fluxing strands of chaos)$",
+                RegexOptions.IgnoreCase);
+
+            if (!match.Success)
+            {
+                match = Regex.Match(
+                    normalized,
+                    @"^(?<target>.+?)(?:'s)? world dissolves into anarchy$",
+                    RegexOptions.IgnoreCase);
+            }
+
+            if (match.Success)
+            {
+                target = NormalizeVisualEntity(
+                    match.Groups["target"].Value,
+                    null);
+                type = CrowdControlType.Stun;
+                areaEffectHint = null;
+                return true;
+            }
+
+            match = Regex.Match(
+                normalized,
+                @"^(?<target>.+?) is stunned by scintillating colors$",
+                RegexOptions.IgnoreCase);
+
+            if (match.Success)
+            {
+                target = NormalizeVisualEntity(
+                    match.Groups["target"].Value,
+                    null);
+                type = CrowdControlType.Stun;
+                areaEffectHint = true;
+                return true;
+            }
+
+            target = string.Empty;
+            type = default;
+            areaEffectHint = null;
+            return false;
+        }
+
+        private bool ResolveRecentAreaEffectHint(
+            CrowdControlType type,
+            bool? explicitHint)
+        {
+            if (explicitHint.HasValue)
+            {
+                return explicitHint.Value;
+            }
+
+            DateTime now = DateTime.Now;
+
+            RecentCrowdControlCast? recent =
+                _recentCrowdControlCasts
+                    .Where(entry =>
+                        entry.ExpiresAt > now &&
+                        entry.Type == type)
+                    .LastOrDefault();
+
+            return recent?.IsAreaEffect ?? false;
+        }
+
+        private static double CalculateIndicatorOpacity(
+            SpecialIndicatorEvent indicator)
+        {
+            double remainingSeconds =
+                (indicator.ExpiresAt - DateTime.Now)
+                    .TotalSeconds;
+
+            if (remainingSeconds <= 0)
+            {
+                return 0;
+            }
+
+            double totalSeconds = Math.Max(
+                0.1,
+                (indicator.ExpiresAt -
+                 indicator.CreatedAt).TotalSeconds);
+
+            double fadeSeconds = Math.Min(
+                1.5,
+                Math.Max(0.5, totalSeconds / 3.0));
+
+            if (remainingSeconds >= fadeSeconds)
+            {
+                return 1;
+            }
+
+            return Math.Clamp(
+                remainingSeconds / fadeSeconds,
+                0.12,
+                1.0);
+        }
+
+        private void AddSpecialIndicator(
+            string entity,
+            string glyph,
+            global::System.Windows.Media.Brush foreground,
+            string toolTip,
+            int durationSeconds,
+            DateTime logTimestamp,
+            string? correlationKey = null,
+            int dedupeSeconds = 0)
+        {
+            entity = NormalizeVisualEntity(entity, null);
+            if (string.IsNullOrWhiteSpace(entity))
+            {
+                return;
+            }
+
+            if (!string.IsNullOrWhiteSpace(correlationKey) &&
+                dedupeSeconds > 0)
+            {
+                bool duplicate = _specialIndicatorEvents.Any(entry =>
+                    string.Equals(
+                        entry.CorrelationKey,
+                        correlationKey,
+                        StringComparison.OrdinalIgnoreCase) &&
+                    Math.Abs(
+                        (entry.LogTimestamp - logTimestamp)
+                            .TotalSeconds) <= dedupeSeconds);
+
+                if (duplicate)
+                {
+                    return;
+                }
+            }
+
+            _specialIndicatorEvents.Add(
+                new SpecialIndicatorEvent(
+                    entity,
+                    glyph,
+                    foreground,
+                    toolTip,
+                    DateTime.Now.AddSeconds(durationSeconds),
+                    logTimestamp,
+                    correlationKey));
+        }
+
+        private void ExtendHealingAnimation(
+            string entity,
+            int durationSeconds)
+        {
+            entity = NormalizeVisualEntity(entity, null);
+            if (string.IsNullOrWhiteSpace(entity))
+            {
+                return;
+            }
+
+            DateTime expiresAt =
+                DateTime.Now.AddSeconds(durationSeconds);
+
+            if (_healingAnimationUntil.TryGetValue(
+                    entity,
+                    out DateTime existing) &&
+                existing > expiresAt)
+            {
+                return;
+            }
+
+            _healingAnimationUntil[entity] = expiresAt;
+        }
+
+        private void PruneSpecialVisualEvents()
+        {
+            DateTime now = DateTime.Now;
+
+            _specialIndicatorEvents.RemoveAll(
+                entry => entry.ExpiresAt <= now);
+
+            _recentCrowdControlCasts.RemoveAll(
+                entry => entry.ExpiresAt <= now);
+
+            _recentLayOnHandsCasts.RemoveAll(
+                entry => entry.ExpiresAt <= now);
+
+            List<string> expiredAnimations =
+                _healingAnimationUntil
+                    .Where(pair => pair.Value <= now)
+                    .Select(pair => pair.Key)
+                    .ToList();
+
+            foreach (string entity in expiredAnimations)
+            {
+                _healingAnimationUntil.Remove(entity);
+            }
+        }
+
+        private void ClearSpecialVisualEvents()
+        {
+            _specialIndicatorEvents.Clear();
+            _recentCrowdControlCasts.Clear();
+            _recentLayOnHandsCasts.Clear();
+            _healingAnimationUntil.Clear();
+        }
+
+        private bool IsHealingSpellName(string spellName)
+        {
+            if (IsLayOnHandsSpell(spellName))
+            {
+                return true;
+            }
+
+            string normalized =
+                NormalizeSpellNameForClassification(spellName);
+
+            if (HealingSpellNames.Contains(normalized) ||
+                _learnedHealingSpellNames.Contains(normalized))
+            {
+                return true;
+            }
+
+            string padded = $" {normalized} ";
+
+            return HealingSpellFragments.Any(fragment =>
+                padded.Contains(
+                    fragment,
+                    StringComparison.OrdinalIgnoreCase));
+        }
+
+        private static bool IsLayOnHandsSpell(
+            string spellName)
+        {
+            string normalized =
+                NormalizeSpellNameForClassification(spellName);
+
+            return normalized.Contains(
+                       "lay on hands",
+                       StringComparison.OrdinalIgnoreCase) ||
+                   normalized.Contains(
+                       "lay of hands",
+                       StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool TryClassifyCrowdControlSpell(
+            string spellName,
+            out CrowdControlType type,
+            out bool isAreaEffect)
+        {
+            string normalized =
+                NormalizeSpellNameForClassification(spellName);
+
+            if (CharmSpellNames.Contains(normalized) ||
+                normalized.Contains(
+                    "charm",
+                    StringComparison.OrdinalIgnoreCase) ||
+                normalized.Contains(
+                    "beguile",
+                    StringComparison.OrdinalIgnoreCase) ||
+                normalized.Contains(
+                    "allure",
+                    StringComparison.OrdinalIgnoreCase) ||
+                normalized.Contains(
+                    "dictate",
+                    StringComparison.OrdinalIgnoreCase) ||
+                normalized.Contains(
+                    "dominat",
+                    StringComparison.OrdinalIgnoreCase) ||
+                normalized.Contains(
+                    "coerce",
+                    StringComparison.OrdinalIgnoreCase) ||
+                normalized.Contains(
+                    "cajol",
+                    StringComparison.OrdinalIgnoreCase) ||
+                normalized.Contains(
+                    "agacerie",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                type = CrowdControlType.Charm;
+                isAreaEffect = false;
+                return true;
+            }
+
+            if (RootSpellNames.Contains(normalized) ||
+                normalized.Equals(
+                    "root",
+                    StringComparison.OrdinalIgnoreCase) ||
+                normalized.Contains(
+                    " roots",
+                    StringComparison.OrdinalIgnoreCase) ||
+                normalized.Contains(
+                    "immobil",
+                    StringComparison.OrdinalIgnoreCase) ||
+                normalized.Contains(
+                    "fetter",
+                    StringComparison.OrdinalIgnoreCase) ||
+                normalized.Contains(
+                    "paralyz",
+                    StringComparison.OrdinalIgnoreCase) ||
+                normalized.Contains(
+                    "vinelash",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                type = CrowdControlType.Root;
+                isAreaEffect = false;
+                return true;
+            }
+
+            if (MesmerizeSpellNames.Contains(normalized) ||
+                normalized.Contains(
+                    "mesmer",
+                    StringComparison.OrdinalIgnoreCase) ||
+                normalized.Contains(
+                    "enthrall",
+                    StringComparison.OrdinalIgnoreCase) ||
+                normalized.Contains(
+                    "pixie strike",
+                    StringComparison.OrdinalIgnoreCase) ||
+                normalized.Contains(
+                    "lucid lullaby",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                type = CrowdControlType.Mesmerize;
+                isAreaEffect =
+                    AreaMesmerizeSpellNames.Contains(normalized) ||
+                    normalized.Contains(
+                        "mesmerization",
+                        StringComparison.OrdinalIgnoreCase) ||
+                    normalized.Contains(
+                        "fascination",
+                        StringComparison.OrdinalIgnoreCase) ||
+                    normalized.Contains(
+                        "entrancing lights",
+                        StringComparison.OrdinalIgnoreCase);
+
+                return true;
+            }
+
+            if (StunSpellNames.Contains(normalized) ||
+                normalized.StartsWith(
+                    "color ",
+                    StringComparison.OrdinalIgnoreCase) ||
+                normalized.Contains(
+                    "stun",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                type = CrowdControlType.Stun;
+                isAreaEffect =
+                    AreaStunSpellNames.Contains(normalized) ||
+                    normalized.StartsWith(
+                        "color ",
+                        StringComparison.OrdinalIgnoreCase);
+
+                return true;
+            }
+
+            if (LullSpellNames.Contains(normalized) ||
+                normalized.Contains(
+                    "pacify",
+                    StringComparison.OrdinalIgnoreCase) ||
+                normalized.Contains(
+                    "pacification",
+                    StringComparison.OrdinalIgnoreCase) ||
+                normalized.Equals(
+                    "lull",
+                    StringComparison.OrdinalIgnoreCase) ||
+                normalized.Equals(
+                    "calm",
+                    StringComparison.OrdinalIgnoreCase) ||
+                normalized.Equals(
+                    "soothe",
+                    StringComparison.OrdinalIgnoreCase) ||
+                normalized.StartsWith(
+                    "harmony",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                type = CrowdControlType.Lull;
+                isAreaEffect =
+                    normalized.Contains(
+                        "harmony",
+                        StringComparison.OrdinalIgnoreCase);
+
+                return true;
+            }
+
+            type = default;
+            isAreaEffect = false;
+            return false;
+        }
+
+        private static string GetCrowdControlGlyph(
+            CrowdControlType type,
+            bool isAreaEffect)
+        {
+            bool useSquare =
+                isAreaEffect &&
+                (type == CrowdControlType.Mesmerize ||
+                 type == CrowdControlType.Stun);
+
+            return useSquare ? "■" : "▲";
+        }
+
+        private static global::System.Windows.Media.Brush GetCrowdControlBrush(
+            CrowdControlType type)
+        {
+            return type switch
+            {
+                CrowdControlType.Charm => CharmIndicatorBrush,
+                CrowdControlType.Root => RootIndicatorBrush,
+                CrowdControlType.Lull => LullIndicatorBrush,
+                CrowdControlType.Mesmerize => MesmerizeIndicatorBrush,
+                CrowdControlType.Stun => StunIndicatorBrush,
+                _ => FriendlyTextBrush
+            };
+        }
+
+        private static string GetCrowdControlLabel(
+            CrowdControlType type)
+        {
+            return type switch
+            {
+                CrowdControlType.Charm => "Charm",
+                CrowdControlType.Root => "Root",
+                CrowdControlType.Lull => "Lull/Pacify",
+                CrowdControlType.Mesmerize => "Mesmerize",
+                CrowdControlType.Stun => "Stun",
+                _ => "Crowd control"
+            };
+        }
+
+        private bool IsHostileEntity(string entity)
+        {
+            if (_knownBadGuys.Contains(entity))
+            {
+                return true;
+            }
+
+            if (!_latestTargets.TryGetValue(
+                    entity,
+                    out TargetEvent? targetEvent))
+            {
+                return false;
+            }
+
+            string target = targetEvent.Target;
+
+            return IsSelf(target) ||
+                   IsOwnedPet(target) ||
+                   IsGroupMember(target);
+        }
+
+        private string NormalizeVisualEntity(
+            string raw,
+            string? sourceForReflexive)
+        {
+            string entity = raw
+                .Trim()
+                .TrimEnd('.', '!')
+                .Replace('’', '\'');
+
+            if (entity.Equals(
+                    "you",
+                    StringComparison.OrdinalIgnoreCase) ||
+                entity.Equals(
+                    "yourself",
+                    StringComparison.OrdinalIgnoreCase) ||
+                entity.Equals(
+                    "your",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return _characterName;
+            }
+
+            if (!string.IsNullOrWhiteSpace(sourceForReflexive) &&
+                (entity.Equals(
+                     "itself",
+                     StringComparison.OrdinalIgnoreCase) ||
+                 entity.Equals(
+                     "himself",
+                     StringComparison.OrdinalIgnoreCase) ||
+                 entity.Equals(
+                     "herself",
+                     StringComparison.OrdinalIgnoreCase) ||
+                 entity.Equals(
+                     "themselves",
+                     StringComparison.OrdinalIgnoreCase)))
+            {
+                return sourceForReflexive;
+            }
+
+            return NormalizeEntity(entity);
+        }
+
+        private static string CleanSpellName(string raw)
+        {
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                return string.Empty;
+            }
+
+            return raw
+                .Trim()
+                .Trim('<', '>', ' ', '.', '!')
+                .Replace('’', '\'');
+        }
+
+        private static string NormalizeSpellNameForClassification(
+            string raw)
+        {
+            string spell = CleanSpellName(raw);
+
+            spell = Regex.Replace(
+                spell,
+                @"\s+\+\d+$",
+                string.Empty,
+                RegexOptions.IgnoreCase);
+
+            spell = Regex.Replace(
+                spell,
+                @"\s+Rk\.\s*[IVX]+$",
+                string.Empty,
+                RegexOptions.IgnoreCase);
+
+            spell = Regex.Replace(
+                spell,
+                @"\s+[IVX]{1,5}$",
+                string.Empty,
+                RegexOptions.IgnoreCase);
+
+            return spell.Trim();
+        }
+
+        private static string BuildLayOnHandsCorrelationKey(
+            string? healer,
+            string target)
+        {
+            return
+                $"lay-on-hands|" +
+                $"{healer?.Trim() ?? "unknown"}|" +
+                $"{target.Trim()}";
+        }
+
         private static bool TryParseCurrency(
             string message,
             out long copperValue)
@@ -1159,6 +2586,7 @@ namespace SpyxysDPSMeter
 
         private void RefreshDisplay()
         {
+            PruneSpecialVisualEvents();
             UpdateTitle();
 
             DateTime displayEnd = GetFightDisplayEndTime();
@@ -1215,6 +2643,14 @@ namespace SpyxysDPSMeter
                 {
                     displaySources.Add(member);
                 }
+            }
+
+            foreach (string entity in
+                     _specialIndicatorEvents
+                         .Select(entry => entry.Entity)
+                         .Concat(_healingAnimationUntil.Keys))
+            {
+                displaySources.Add(entity);
             }
 
             string? mainAssistTarget = null;
@@ -1287,6 +2723,35 @@ namespace SpyxysDPSMeter
                     (global::System.Windows.Media.Brush rowBrush, global::System.Windows.Media.Brush textBrush) =
                         GetRowColors(source);
 
+                    bool hasMainAssistTarget =
+                        isMainAssist &&
+                        _fightActive &&
+                        !string.IsNullOrWhiteSpace(currentTarget);
+
+                    List<RowIndicator> indicators =
+                        _specialIndicatorEvents
+                            .Where(entry =>
+                                entry.Entity.Equals(
+                                    source,
+                                    StringComparison.OrdinalIgnoreCase))
+                            .OrderBy(entry => entry.CreatedAt)
+                            .Select(entry => new RowIndicator
+                            {
+                                Glyph = entry.Glyph,
+                                Foreground = entry.Foreground,
+                                ToolTip = entry.ToolTip,
+                                IsFlashing = entry.IsFlashing,
+                                Opacity = CalculateIndicatorOpacity(
+                                    entry)
+                            })
+                            .ToList();
+
+                    bool showHealingAnimation =
+                        _healingAnimationUntil.TryGetValue(
+                            source,
+                            out DateTime healingUntil) &&
+                        healingUntil > DateTime.Now;
+
                     return new DamageRow
                     {
                         RawEntityName = source,
@@ -1307,9 +2772,15 @@ namespace SpyxysDPSMeter
                         IsGroupMember = isGroupMember,
                         IsMainAssist = isMainAssist,
                         HasAssistMismatch = hasAssistMismatch,
+                        HasMainAssistTarget = hasMainAssistTarget,
+                        MainAssistTargetSubtext = hasMainAssistTarget
+                            ? $"targeting {currentTarget}"
+                            : string.Empty,
                         TargetSubtext = hasAssistMismatch
                             ? $"targeting {currentTarget}"
-                            : string.Empty
+                            : string.Empty,
+                        Indicators = indicators,
+                        ShowHealingAnimation = showHealingAnimation
                     };
                 })
                 .OrderByDescending(row => row.RawDamage)
@@ -1647,6 +3118,7 @@ namespace SpyxysDPSMeter
             _knownBadGuys.Clear();
             _groupMembers.Clear();
             _latestTargets.Clear();
+            ClearSpecialVisualEvents();
 
             _pendingGroupInviter = null;
             _pendingPartyExperienceTimestamp = null;
@@ -1672,6 +3144,7 @@ namespace SpyxysDPSMeter
             _knownBadGuys.Clear();
             _groupMembers.Clear();
             _latestTargets.Clear();
+            ClearSpecialVisualEvents();
 
             _pendingGroupInviter = null;
             _pendingPartyExperienceTimestamp = null;
@@ -2332,6 +3805,7 @@ namespace SpyxysDPSMeter
             _pendingBarrierWallClock = null;
             _pendingPartyExperienceTimestamp = null;
             _latestTargets.Clear();
+            ClearSpecialVisualEvents();
 
             _rows.Clear();
             RefreshDisplay();
@@ -2350,6 +3824,7 @@ namespace SpyxysDPSMeter
             public string DamageText { get; set; } = string.Empty;
             public string DpsText { get; set; } = string.Empty;
             public string TargetSubtext { get; set; } = string.Empty;
+            public string MainAssistTargetSubtext { get; set; } = string.Empty;
             public long RawDamage { get; set; }
             public global::System.Windows.Media.Brush RowBrush { get; set; } = FriendlyRowBrush;
             public global::System.Windows.Media.Brush TextBrush { get; set; } = FriendlyTextBrush;
@@ -2358,6 +3833,19 @@ namespace SpyxysDPSMeter
             public bool IsGroupMember { get; set; }
             public bool IsMainAssist { get; set; }
             public bool HasAssistMismatch { get; set; }
+            public bool HasMainAssistTarget { get; set; }
+            public bool ShowHealingAnimation { get; set; }
+            public List<RowIndicator> Indicators { get; set; } = new();
+        }
+
+        public sealed class RowIndicator
+        {
+            public string Glyph { get; set; } = string.Empty;
+            public global::System.Windows.Media.Brush Foreground { get; set; } =
+                FriendlyTextBrush;
+            public string ToolTip { get; set; } = string.Empty;
+            public bool IsFlashing { get; set; }
+            public double Opacity { get; set; } = 1;
         }
 
         public sealed class MeterSettings
@@ -2374,6 +3862,46 @@ namespace SpyxysDPSMeter
             public bool ShowMainAssistIndicators { get; set; } = true;
             public string? MainAssistName { get; set; }
             public List<string> ManualGroupMembers { get; set; } = new();
+        }
+
+        private enum CrowdControlType
+        {
+            Charm,
+            Root,
+            Lull,
+            Mesmerize,
+            Stun
+        }
+
+        private sealed record ParsedSpellCast(
+            string Caster,
+            string Spell);
+
+        private sealed record ParsedHealEvent(
+            string? Healer,
+            string Target,
+            string Spell);
+
+        private sealed record RecentCrowdControlCast(
+            CrowdControlType Type,
+            bool IsAreaEffect,
+            DateTime ExpiresAt);
+
+        private sealed record RecentLayOnHandsCast(
+            string Caster,
+            DateTime ExpiresAt);
+
+        private sealed record SpecialIndicatorEvent(
+            string Entity,
+            string Glyph,
+            global::System.Windows.Media.Brush Foreground,
+            string ToolTip,
+            DateTime ExpiresAt,
+            DateTime LogTimestamp,
+            string? CorrelationKey)
+        {
+            public DateTime CreatedAt { get; } = DateTime.Now;
+            public bool IsFlashing { get; } = false;
         }
 
         private sealed record DamageEvent(

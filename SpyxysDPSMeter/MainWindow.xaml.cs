@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
@@ -39,6 +39,7 @@ namespace SpyxysDPSMeter
         private const int CrowdControlCastIndicatorSeconds = 4;
         private const int CrowdControlLandedIndicatorSeconds = 6;
         private const int RecentCrowdControlCastSeconds = 6;
+        private const int DamageSpellCastIndicatorSeconds = 4;
         private const int WindowPlacementSaveDelayMilliseconds = 400;
 
         private const string SingleInstanceMutexName =
@@ -287,6 +288,211 @@ namespace SpyxysDPSMeter
             "bloom"
         };
 
+        private static readonly HashSet<string> DirectDamageSpellNames =
+            new(StringComparer.OrdinalIgnoreCase)
+            {
+                "Burst of Flame",
+                "Burn",
+                "Shock of Frost",
+                "Shock of Fire",
+                "Shock of Lightning",
+                "Shock of Ice",
+                "Shock of Flame",
+                "Shock of Blades",
+                "Shock of Spikes",
+                "Shock of Swords",
+                "Ice Shock",
+                "Frost Shock",
+                "Lightning Shock",
+                "Fire Bolt",
+                "Flame Bolt",
+                "Lava Bolt",
+                "Lightning Bolt",
+                "Lightning Blast",
+                "Thunder Strike",
+                "Thunderclap",
+                "Inferno Shock",
+                "Force Shock",
+                "Conflagration",
+                "Sunstrike",
+                "Ice Spear of Solist",
+                "Spear of Warding",
+                "Spear of Molten Shieldstone",
+                "Spear of Blistersteel",
+                "Spear of Incineration",
+                "Draught of Fire",
+                "Draught of Ice",
+                "Draught of Lightning",
+                "Draught of Jiva",
+                "Lure of Flame",
+                "Lure of Ice",
+                "Lure of Lightning",
+                "Lure of Frost",
+                "Lure of Thunder",
+                "Lure of Ro",
+                "Scars of Sigil",
+                "Porlos' Fury",
+                "Combust",
+                "Firestrike",
+                "Call of Flame",
+                "Calefaction",
+                "Starfire",
+                "Winter's Frost",
+                "Lightning Strike",
+                "Avalanche",
+                "E'ci's Frosty Breath",
+                "Karana's Rage",
+                "Nature's Wrath",
+                "Frost Rift",
+                "Frost Strike",
+                "Ice Strike",
+                "Spirit Strike",
+                "Spear of Torment",
+                "Blast of Venom",
+                "Venomous Blast",
+                "Lifetap",
+                "Lifespike",
+                "Lifedraw",
+                "Drain Soul",
+                "Drain Spirit",
+                "Drain Life",
+                "Spirit Tap",
+                "Touch of Night",
+                "Deflux",
+                "Vexing Mordinia",
+                "Ancient Lifebane",
+                "Poison Bolt",
+                "Ignite Bones",
+                "Sanity Warp",
+                "Chaos Flux",
+                "Anarchy",
+                "Dementia",
+                "Discordant Mind",
+                "Mind Melt",
+                "Strike",
+                "Smite",
+                "Wrath",
+                "Retribution",
+                "Reckoning",
+                "Expulse Undead",
+                "Dismiss Undead",
+                "Banish Undead",
+                "Exorcise Undead",
+                "Judgment",
+                "Holy Strike",
+                "Brusco's Boastful Bellow",
+                "Denon's Bereavement",
+                "Tuyen's Chant of Flame",
+                "Tuyen's Chant of Frost",
+                "Tuyen's Chant of Poison",
+                "Tuyen's Chant of the Plague"
+            };
+
+        private static readonly HashSet<string> DamageOverTimeSpellNames =
+            new(StringComparer.OrdinalIgnoreCase)
+            {
+                "Flame Lick",
+                "Stinging Swarm",
+                "Creeping Crud",
+                "Immolate",
+                "Drones of Doom",
+                "Winged Death",
+                "Drifting Death",
+                "Breath of Ro",
+                "Immolation of Ro",
+                "Vengeance of Al'Kabor",
+                "Swarming Death",
+                "Sicken",
+                "Tainted Breath",
+                "Affliction",
+                "Envenomed Breath",
+                "Venom of the Snake",
+                "Scourge",
+                "Plague",
+                "Pox of Bertoxxulous",
+                "Bane of Nife",
+                "Epidemic",
+                "Ebolt",
+                "Envenomed Bolt",
+                "Disease Cloud",
+                "Clinging Darkness",
+                "Engulfing Darkness",
+                "Dooming Darkness",
+                "Cascading Darkness",
+                "Heat Blood",
+                "Heart Flutter",
+                "Boil Blood",
+                "Ignite Blood",
+                "Bond of Death",
+                "Asystole",
+                "Splurt",
+                "Pyrocruor",
+                "Funeral Pyre",
+                "Devouring Darkness",
+                "Torment of Shadows",
+                "Leach",
+                "Vampiric Curse",
+                "Choke",
+                "Suffocating Sphere",
+                "Suffocate",
+                "Asphyxiate",
+                "Torment of Argli",
+                "Chords of Dissonance",
+                "Denon's Disruptive Discord",
+                "Selo's Chords of Cessation",
+                "Tuyen's Chant of Flame",
+                "Tuyen's Chant of Frost",
+                "Tuyen's Chant of Poison",
+                "Tuyen's Chant of the Plague"
+            };
+
+        private static readonly HashSet<string> AreaDamageSpellNames =
+            new(StringComparer.OrdinalIgnoreCase)
+            {
+                "Column of Lightning",
+                "Column of Fire",
+                "Column of Frost",
+                "Pillar of Lightning",
+                "Pillar of Fire",
+                "Pillar of Frost",
+                "Circle of Force",
+                "Circle of Flame",
+                "Circle of Winter",
+                "Inferno of Al'Kabor",
+                "Winds of Gelid",
+                "Jyll's Static Pulse",
+                "Jyll's Zephyr of Ice",
+                "Jyll's Wave of Heat",
+                "Rain of Blades",
+                "Rain of Spikes",
+                "Rain of Swords",
+                "Rain of Lava",
+                "Rain of Fire",
+                "Rain of Lightning",
+                "Rain of Molten Lava",
+                "Tears of Prexus",
+                "Tears of Solusek",
+                "Tears of Druzzil",
+                "Tremor",
+                "Earthquake",
+                "Upheaval",
+                "Poison Storm",
+                "Word of Pain",
+                "Word of Shadow",
+                "Word of Spirit",
+                "Word of Souls",
+                "Word of Redemption",
+                "Gravity Flux",
+                "Color Flux",
+                "Color Shift",
+                "Color Skew",
+                "Color Slant",
+                "Color Shock",
+                "Chords of Dissonance",
+                "Denon's Disruptive Discord",
+                "Selo's Chords of Cessation"
+            };
+
         private static readonly HashSet<string> CharmSpellNames =
             new(StringComparer.OrdinalIgnoreCase)
             {
@@ -409,6 +615,8 @@ namespace SpyxysDPSMeter
 
         private static readonly global::System.Windows.Media.Brush HealingIndicatorBrush =
             FrozenBrush(255, 89, 255, 138);
+        private static readonly global::System.Windows.Media.Brush DamageSpellIndicatorBrush =
+            FrozenBrush(255, 255, 76, 76);
         private static readonly global::System.Windows.Media.Brush CharmIndicatorBrush =
             FrozenBrush(255, 255, 79, 216);
         private static readonly global::System.Windows.Media.Brush RootIndicatorBrush =
@@ -459,6 +667,10 @@ namespace SpyxysDPSMeter
         private readonly Dictionary<string, DateTime> _healingAnimationUntil =
             new(StringComparer.OrdinalIgnoreCase);
         private readonly HashSet<string> _learnedHealingSpellNames =
+            new(StringComparer.OrdinalIgnoreCase);
+        private readonly HashSet<string> _learnedDirectDamageSpellNames =
+            new(StringComparer.OrdinalIgnoreCase);
+        private readonly HashSet<string> _learnedDamageOverTimeSpellNames =
             new(StringComparer.OrdinalIgnoreCase);
 
         private string _logDirectory = DefaultLogDirectory;
@@ -1364,7 +1576,7 @@ namespace SpyxysDPSMeter
 
             if (TryParseDamage(message, timestamp, out DamageEvent? damageEvent))
             {
-                HandleDamageEvent(damageEvent);
+                HandleDamageEvent(damageEvent!);
                 return;
             }
 
@@ -1855,6 +2067,25 @@ namespace SpyxysDPSMeter
                     HealingIndicatorBrush,
                     "Casting a healing spell",
                     HealingCastIndicatorSeconds,
+                    logTimestamp);
+            }
+
+            if (TryClassifyDamageSpell(
+                    spellName,
+                    out DamageSpellCastType damageSpellType))
+            {
+                bool isDamageOverTime =
+                    damageSpellType ==
+                    DamageSpellCastType.DamageOverTime;
+
+                AddSpecialIndicator(
+                    caster,
+                    isDamageOverTime ? "○" : "●",
+                    DamageSpellIndicatorBrush,
+                    isDamageOverTime
+                        ? $"Casting damage over time: {spellName}"
+                        : $"Casting direct damage: {spellName}",
+                    DamageSpellCastIndicatorSeconds,
                     logTimestamp);
             }
 
@@ -2445,6 +2676,105 @@ namespace SpyxysDPSMeter
             _healingAnimationUntil.Clear();
         }
 
+        private bool TryClassifyDamageSpell(
+            string spellName,
+            out DamageSpellCastType damageSpellType)
+        {
+            string normalized =
+                NormalizeSpellNameForClassification(spellName);
+
+            if (string.IsNullOrWhiteSpace(normalized))
+            {
+                damageSpellType = default;
+                return false;
+            }
+
+            if (DamageOverTimeSpellNames.Contains(normalized) ||
+                _learnedDamageOverTimeSpellNames.Contains(normalized) ||
+                IsRecognizedDamageOverTimeSpellPattern(normalized))
+            {
+                damageSpellType =
+                    DamageSpellCastType.DamageOverTime;
+                return true;
+            }
+
+            if (DirectDamageSpellNames.Contains(normalized) ||
+                AreaDamageSpellNames.Contains(normalized) ||
+                _learnedDirectDamageSpellNames.Contains(normalized) ||
+                IsRecognizedDirectDamageSpellPattern(normalized))
+            {
+                damageSpellType =
+                    DamageSpellCastType.DirectDamage;
+                return true;
+            }
+
+            damageSpellType = default;
+            return false;
+        }
+
+        private static bool IsRecognizedDirectDamageSpellPattern(
+            string normalized)
+        {
+            return normalized.StartsWith(
+                       "shock of ",
+                       StringComparison.OrdinalIgnoreCase) ||
+                   normalized.StartsWith(
+                       "spear of ",
+                       StringComparison.OrdinalIgnoreCase) ||
+                   normalized.StartsWith(
+                       "draught of ",
+                       StringComparison.OrdinalIgnoreCase) ||
+                   normalized.StartsWith(
+                       "lure of ",
+                       StringComparison.OrdinalIgnoreCase) ||
+                   normalized.StartsWith(
+                       "rain of ",
+                       StringComparison.OrdinalIgnoreCase) ||
+                   normalized.StartsWith(
+                       "column of ",
+                       StringComparison.OrdinalIgnoreCase) ||
+                   normalized.StartsWith(
+                       "pillar of ",
+                       StringComparison.OrdinalIgnoreCase) ||
+                   normalized.StartsWith(
+                       "circle of ",
+                       StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool IsRecognizedDamageOverTimeSpellPattern(
+            string normalized)
+        {
+            return normalized.StartsWith(
+                       "tuyen's chant of ",
+                       StringComparison.OrdinalIgnoreCase);
+        }
+
+        private void LearnDamageSpell(
+            string rawSpellName,
+            DamageSpellCastType damageSpellType)
+        {
+            string normalized =
+                NormalizeSpellNameForClassification(rawSpellName);
+
+            if (string.IsNullOrWhiteSpace(normalized))
+            {
+                return;
+            }
+
+            if (damageSpellType ==
+                DamageSpellCastType.DamageOverTime)
+            {
+                _learnedDamageOverTimeSpellNames.Add(normalized);
+                _learnedDirectDamageSpellNames.Remove(normalized);
+                return;
+            }
+
+            if (!_learnedDamageOverTimeSpellNames.Contains(normalized))
+            {
+                _learnedDirectDamageSpellNames.Add(normalized);
+            }
+        }
+
         private bool IsHealingSpellName(string spellName)
         {
             if (IsLayOnHandsSpell(spellName))
@@ -2839,18 +3169,27 @@ namespace SpyxysDPSMeter
                     timestamp,
                     match.Groups["source"].Value,
                     match.Groups["target"].Value,
-                    match.Groups["amount"].Value);
+                    match.Groups["amount"].Value,
+                    match.Groups["ability"].Value,
+                    DamageSpellCastType.DirectDamage);
                 return damageEvent != null;
             }
 
             match = DirectDamageRegex.Match(message);
             if (match.Success)
             {
+                DamageSpellCastType? damageSpellType =
+                    match.Groups["ability"].Success
+                        ? DamageSpellCastType.DirectDamage
+                        : null;
+
                 damageEvent = CreateDamageEvent(
                     timestamp,
                     match.Groups["source"].Value,
                     match.Groups["target"].Value,
-                    match.Groups["amount"].Value);
+                    match.Groups["amount"].Value,
+                    match.Groups["ability"].Value,
+                    damageSpellType);
                 return damageEvent != null;
             }
 
@@ -2861,7 +3200,9 @@ namespace SpyxysDPSMeter
                     timestamp,
                     match.Groups["source"].Value,
                     match.Groups["target"].Value,
-                    match.Groups["amount"].Value);
+                    match.Groups["amount"].Value,
+                    match.Groups["ability"].Value,
+                    DamageSpellCastType.DamageOverTime);
                 return damageEvent != null;
             }
 
@@ -2872,7 +3213,9 @@ namespace SpyxysDPSMeter
                     timestamp,
                     _characterName,
                     match.Groups["target"].Value,
-                    match.Groups["amount"].Value);
+                    match.Groups["amount"].Value,
+                    match.Groups["ability"].Value,
+                    DamageSpellCastType.DamageOverTime);
                 return damageEvent != null;
             }
 
@@ -2883,7 +3226,9 @@ namespace SpyxysDPSMeter
                     timestamp,
                     _characterName,
                     match.Groups["target"].Value,
-                    match.Groups["amount"].Value);
+                    match.Groups["amount"].Value,
+                    string.Empty,
+                    null);
                 return damageEvent != null;
             }
 
@@ -2894,7 +3239,9 @@ namespace SpyxysDPSMeter
                     timestamp,
                     match.Groups["source"].Value,
                     match.Groups["target"].Value,
-                    match.Groups["amount"].Value);
+                    match.Groups["amount"].Value,
+                    string.Empty,
+                    null);
                 return damageEvent != null;
             }
 
@@ -2906,7 +3253,9 @@ namespace SpyxysDPSMeter
             DateTime timestamp,
             string source,
             string target,
-            string amountText)
+            string amountText,
+            string ability,
+            DamageSpellCastType? damageSpellType)
         {
             if (!int.TryParse(
                     amountText,
@@ -2926,7 +3275,21 @@ namespace SpyxysDPSMeter
                 return null;
             }
 
-            return new DamageEvent(timestamp, source, target, amount);
+            ability = CleanSpellName(ability);
+
+            if (damageSpellType.HasValue &&
+                !string.IsNullOrWhiteSpace(ability))
+            {
+                LearnDamageSpell(
+                    ability,
+                    damageSpellType.Value);
+            }
+
+            return new DamageEvent(
+                timestamp,
+                source,
+                target,
+                amount);
         }
 
         private bool TryParseKill(
@@ -4515,6 +4878,12 @@ namespace SpyxysDPSMeter
             public double? WindowHeight { get; set; }
             public string? MainAssistName { get; set; }
             public List<string> ManualGroupMembers { get; set; } = new();
+        }
+
+        private enum DamageSpellCastType
+        {
+            DirectDamage,
+            DamageOverTime
         }
 
         private enum CrowdControlType

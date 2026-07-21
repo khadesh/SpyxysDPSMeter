@@ -47,6 +47,17 @@ The selected directory is saved in `settings.json`. Use **Revert to Default** to
   - otherwise the encounter is finalized.
 - Rows are sorted by total damage, then alphabetically.
 
+### Damage spell-cast indicators
+
+Temporary red circle indicators appear beside any recognized entity when it begins casting a damage spell:
+
+- `●` — a direct-damage spell is being cast;
+- `○` — a damage-over-time spell is being cast.
+
+The indicators remain visible for four seconds. They can appear for the monitored player, group members, pets, enemies, and other parsed casters.
+
+Damage spells are recognized from built-in direct-damage and DoT spell lists, known spell-family patterns, and spell names learned from actual damage log records during the current run. When an unknown spell is learned from a direct-damage hit or DoT tick, later casts of that spell receive the appropriate filled or hollow red circle.
+
 ### Recent-attacker markers
 
 One or more `!` marks after a name show how many distinct attackers damaged that entity during the last five seconds.
@@ -185,6 +196,7 @@ Damage and DPS numbers can be aligned left or right.
 - Double-clicking the tray icon restores the window.
 - The tray menu provides **Show Spyxy's DPS Meter** and **Exit**.
 - Timers and log monitoring continue while the window is hidden.
+- Launching a second copy restores the existing window and immediately closes the new process before it reads any logs.
 
 ### Reset button
 
@@ -195,7 +207,7 @@ The reset button clears current:
 - XP tracking;
 - platinum tracking;
 - target history;
-- temporary healing and CC indicators.
+- temporary healing, damage-spell, and CC indicators.
 
 It does not erase saved application settings.
 
@@ -232,7 +244,7 @@ Settings are serialized as JSON to:
 <application folder>\settings.json
 ```
 
-The settings file includes display preferences, platinum mode, manual group members, main assist, and the selected log directory.
+The settings file includes display preferences, platinum mode, manual group members, main assist, the selected log directory, and the saved window position and size.
 
 Example log-directory setting:
 

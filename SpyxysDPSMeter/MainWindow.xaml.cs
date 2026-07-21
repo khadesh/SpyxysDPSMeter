@@ -13,11 +13,6 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
-using Drawing = System.Drawing;
-using Forms = System.Windows.Forms;
-using Brush = global::System.Windows.Media.Brush;
-using Color = global::System.Windows.Media.Color;
-
 namespace SpyxysDPSMeter
 {
     public partial class MainWindow : Window
@@ -169,28 +164,28 @@ namespace SpyxysDPSMeter
             "ddd MMM dd HH:mm:ss yyyy"
         };
 
-        private static readonly Brush SelfRowBrush = FrozenBrush(90, 112, 83, 18);
-        private static readonly Brush SelfTextBrush = FrozenBrush(255, 255, 216, 92);
+        private static readonly global::System.Windows.Media.Brush SelfRowBrush = FrozenBrush(90, 112, 83, 18);
+        private static readonly global::System.Windows.Media.Brush SelfTextBrush = FrozenBrush(255, 255, 216, 92);
 
-        private static readonly Brush GroupRowBrush = FrozenBrush(90, 94, 74, 28);
-        private static readonly Brush GroupTextBrush = FrozenBrush(255, 246, 220, 137);
+        private static readonly global::System.Windows.Media.Brush GroupRowBrush = FrozenBrush(90, 94, 74, 28);
+        private static readonly global::System.Windows.Media.Brush GroupTextBrush = FrozenBrush(255, 246, 220, 137);
 
-        private static readonly Brush PetRowBrush = FrozenBrush(90, 35, 102, 50);
-        private static readonly Brush PetTextBrush = FrozenBrush(255, 142, 232, 148);
+        private static readonly global::System.Windows.Media.Brush PetRowBrush = FrozenBrush(90, 35, 102, 50);
+        private static readonly global::System.Windows.Media.Brush PetTextBrush = FrozenBrush(255, 142, 232, 148);
 
-        private static readonly Brush EnemyRowBrush = FrozenBrush(90, 111, 34, 34);
-        private static readonly Brush EnemyTextBrush = FrozenBrush(255, 255, 142, 142);
+        private static readonly global::System.Windows.Media.Brush EnemyRowBrush = FrozenBrush(90, 111, 34, 34);
+        private static readonly global::System.Windows.Media.Brush EnemyTextBrush = FrozenBrush(255, 255, 142, 142);
 
-        private static readonly Brush FriendlyRowBrush = FrozenBrush(90, 37, 76, 115);
-        private static readonly Brush FriendlyTextBrush = FrozenBrush(255, 161, 207, 255);
+        private static readonly global::System.Windows.Media.Brush FriendlyRowBrush = FrozenBrush(90, 37, 76, 115);
+        private static readonly global::System.Windows.Media.Brush FriendlyTextBrush = FrozenBrush(255, 161, 207, 255);
 
         private readonly ObservableCollection<DamageRow> _rows = new();
         private readonly DispatcherTimer _readTimer;
         private readonly DispatcherTimer _fileScanTimer;
 
-        private Forms.NotifyIcon? _trayIcon;
-        private Forms.ContextMenuStrip? _trayMenu;
-        private Drawing.Icon? _trayIconImage;
+        private global::System.Windows.Forms.NotifyIcon? _trayIcon;
+        private global::System.Windows.Forms.ContextMenuStrip? _trayMenu;
+        private global::System.Drawing.Icon? _trayIconImage;
         private bool _exitRequested;
 
         private readonly List<DamageEvent> _fightDamageEvents = new();
@@ -300,24 +295,24 @@ namespace SpyxysDPSMeter
 
         private void InitializeTrayIcon()
         {
-            _trayMenu = new Forms.ContextMenuStrip();
+            _trayMenu = new global::System.Windows.Forms.ContextMenuStrip();
 
-            Forms.ToolStripMenuItem showItem = new(
+            global::System.Windows.Forms.ToolStripMenuItem showItem = new(
                 "Show Spyxy's DPS Meter");
             showItem.Click += (_, _) =>
                 Dispatcher.Invoke(ShowFromSystemTray);
 
-            Forms.ToolStripMenuItem exitItem = new("Exit");
+            global::System.Windows.Forms.ToolStripMenuItem exitItem = new("Exit");
             exitItem.Click += (_, _) =>
                 Dispatcher.Invoke(ExitApplication);
 
             _trayMenu.Items.Add(showItem);
-            _trayMenu.Items.Add(new Forms.ToolStripSeparator());
+            _trayMenu.Items.Add(new global::System.Windows.Forms.ToolStripSeparator());
             _trayMenu.Items.Add(exitItem);
 
             _trayIconImage = LoadTrayIcon();
 
-            _trayIcon = new Forms.NotifyIcon
+            _trayIcon = new global::System.Windows.Forms.NotifyIcon
             {
                 Text = "Spyxy's DPS Meter",
                 Icon = _trayIconImage,
@@ -329,15 +324,15 @@ namespace SpyxysDPSMeter
                 Dispatcher.Invoke(ShowFromSystemTray);
         }
 
-        private static Drawing.Icon LoadTrayIcon()
+        private static global::System.Drawing.Icon LoadTrayIcon()
         {
             try
             {
                 string? executablePath = Environment.ProcessPath;
                 if (!string.IsNullOrWhiteSpace(executablePath))
                 {
-                    Drawing.Icon? extracted =
-                        Drawing.Icon.ExtractAssociatedIcon(
+                    global::System.Drawing.Icon? extracted =
+                        global::System.Drawing.Icon.ExtractAssociatedIcon(
                             executablePath);
 
                     if (extracted != null)
@@ -351,8 +346,8 @@ namespace SpyxysDPSMeter
                 // Fall back to the standard Windows application icon.
             }
 
-            return (Drawing.Icon)
-                Drawing.SystemIcons.Application.Clone();
+            return (global::System.Drawing.Icon)
+                global::System.Drawing.SystemIcons.Application.Clone();
         }
 
         private void HideToSystemTray()
@@ -383,7 +378,7 @@ namespace SpyxysDPSMeter
         {
             _exitRequested = true;
             Close();
-            System.Windows.Application.Current.Shutdown();
+            global::System.Windows.Application.Current.Shutdown();
         }
 
         private void DisposeTrayIcon()
@@ -1289,7 +1284,7 @@ namespace SpyxysDPSMeter
 
                     string displayName =
                         BuildDisplayName(source, markerCount);
-                    (Brush rowBrush, Brush textBrush) =
+                    (global::System.Windows.Media.Brush rowBrush, global::System.Windows.Media.Brush textBrush) =
                         GetRowColors(source);
 
                     return new DamageRow
@@ -1414,7 +1409,7 @@ namespace SpyxysDPSMeter
                    _knownBadGuys.Contains(source);
         }
 
-        private (Brush RowBrush, Brush TextBrush) GetRowColors(string source)
+        private (global::System.Windows.Media.Brush RowBrush, global::System.Windows.Media.Brush TextBrush) GetRowColors(string source)
         {
             if (IsSelf(source))
             {
@@ -1865,10 +1860,10 @@ namespace SpyxysDPSMeter
             return char.ToUpperInvariant(value[0]) + value[1..];
         }
 
-        private static Brush FrozenBrush(byte alpha, byte red, byte green, byte blue)
+        private static global::System.Windows.Media.Brush FrozenBrush(byte alpha, byte red, byte green, byte blue)
         {
             SolidColorBrush brush =
-                new(Color.FromArgb(alpha, red, green, blue));
+                new(global::System.Windows.Media.Color.FromArgb(alpha, red, green, blue));
             brush.Freeze();
             return brush;
         }
@@ -1890,7 +1885,7 @@ namespace SpyxysDPSMeter
 
         private void SettingsButton_Click(object sender, RoutedEventArgs e)
         {
-            ContextMenu? menu = SettingsButton.ContextMenu;
+            global::System.Windows.Controls.ContextMenu? menu = SettingsButton.ContextMenu;
             if (menu == null)
             {
                 return;
@@ -1907,7 +1902,7 @@ namespace SpyxysDPSMeter
             object sender,
             RoutedEventArgs e)
         {
-            if (sender is not MenuItem menuItem ||
+            if (sender is not global::System.Windows.Controls.MenuItem menuItem ||
                 menuItem.Tag is not string settingName)
             {
                 return;
@@ -1958,7 +1953,7 @@ namespace SpyxysDPSMeter
             object sender,
             RoutedEventArgs e)
         {
-            if (sender is not MenuItem menuItem ||
+            if (sender is not global::System.Windows.Controls.MenuItem menuItem ||
                 menuItem.Tag is not string alignment)
             {
                 return;
@@ -1978,7 +1973,7 @@ namespace SpyxysDPSMeter
             object sender,
             RoutedEventArgs e)
         {
-            if (sender is not MenuItem menuItem ||
+            if (sender is not global::System.Windows.Controls.MenuItem menuItem ||
                 menuItem.Tag is not string mode)
             {
                 return;
@@ -2013,7 +2008,7 @@ namespace SpyxysDPSMeter
                 return;
             }
 
-            MenuItem setMainAssistItem = new()
+            global::System.Windows.Controls.MenuItem setMainAssistItem = new()
             {
                 Header = "Set as Main Assist",
                 CommandParameter = damageRow,
@@ -2024,7 +2019,7 @@ namespace SpyxysDPSMeter
             setMainAssistItem.Click +=
                 SetMainAssistMenuItem_Click;
 
-            MenuItem clearMainAssistItem = new()
+            global::System.Windows.Controls.MenuItem clearMainAssistItem = new()
             {
                 Header = "Clear Main Assist",
                 IsEnabled =
@@ -2033,7 +2028,7 @@ namespace SpyxysDPSMeter
             clearMainAssistItem.Click +=
                 ClearMainAssistMenuItem_Click;
 
-            ContextMenu menu = new();
+            global::System.Windows.Controls.ContextMenu menu = new();
             menu.Items.Add(setMainAssistItem);
             menu.Items.Add(clearMainAssistItem);
             menu.PlacementTarget = row;
@@ -2046,7 +2041,7 @@ namespace SpyxysDPSMeter
             object sender,
             RoutedEventArgs e)
         {
-            if (sender is not MenuItem menuItem ||
+            if (sender is not global::System.Windows.Controls.MenuItem menuItem ||
                 menuItem.CommandParameter is not DamageRow row ||
                 (!row.IsGroupMember &&
                  !IsSelf(row.RawEntityName)))
@@ -2088,7 +2083,7 @@ namespace SpyxysDPSMeter
             if (unknownEntities.Count == 0)
             {
                 TagGroupMemberMenuItem.Items.Add(
-                    new MenuItem
+                    new global::System.Windows.Controls.MenuItem
                     {
                         Header = "No unknown entities in the current meter",
                         IsEnabled = false
@@ -2098,7 +2093,7 @@ namespace SpyxysDPSMeter
             {
                 foreach (string entity in unknownEntities)
                 {
-                    MenuItem item = new()
+                    global::System.Windows.Controls.MenuItem item = new()
                     {
                         Header = entity,
                         Tag = entity
@@ -2116,7 +2111,7 @@ namespace SpyxysDPSMeter
             if (manualMembers.Count == 0)
             {
                 RemoveGroupMemberMenuItem.Items.Add(
-                    new MenuItem
+                    new global::System.Windows.Controls.MenuItem
                     {
                         Header = "No manually tagged group members",
                         IsEnabled = false
@@ -2126,7 +2121,7 @@ namespace SpyxysDPSMeter
             {
                 foreach (string entity in manualMembers)
                 {
-                    MenuItem item = new()
+                    global::System.Windows.Controls.MenuItem item = new()
                     {
                         Header = entity,
                         Tag = entity
@@ -2142,7 +2137,7 @@ namespace SpyxysDPSMeter
             object sender,
             RoutedEventArgs e)
         {
-            if (sender is not MenuItem menuItem ||
+            if (sender is not global::System.Windows.Controls.MenuItem menuItem ||
                 menuItem.Tag is not string entity ||
                 string.IsNullOrWhiteSpace(entity))
             {
@@ -2160,7 +2155,7 @@ namespace SpyxysDPSMeter
             object sender,
             RoutedEventArgs e)
         {
-            if (sender is not MenuItem menuItem ||
+            if (sender is not global::System.Windows.Controls.MenuItem menuItem ||
                 menuItem.Tag is not string entity ||
                 string.IsNullOrWhiteSpace(entity))
             {
@@ -2356,8 +2351,8 @@ namespace SpyxysDPSMeter
             public string DpsText { get; set; } = string.Empty;
             public string TargetSubtext { get; set; } = string.Empty;
             public long RawDamage { get; set; }
-            public Brush RowBrush { get; set; } = FriendlyRowBrush;
-            public Brush TextBrush { get; set; } = FriendlyTextBrush;
+            public global::System.Windows.Media.Brush RowBrush { get; set; } = FriendlyRowBrush;
+            public global::System.Windows.Media.Brush TextBrush { get; set; } = FriendlyTextBrush;
             public TextAlignment NumericTextAlignment { get; set; } =
                 TextAlignment.Left;
             public bool IsGroupMember { get; set; }

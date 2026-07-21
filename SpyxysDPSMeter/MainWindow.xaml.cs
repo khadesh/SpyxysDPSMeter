@@ -1308,7 +1308,7 @@ namespace SpyxysDPSMeter
                         IsMainAssist = isMainAssist,
                         HasAssistMismatch = hasAssistMismatch,
                         TargetSubtext = hasAssistMismatch
-                            ? $"targetting {currentTarget}"
+                            ? $"targeting {currentTarget}"
                             : string.Empty
                     };
                 })

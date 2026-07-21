@@ -4,6 +4,12 @@ A compact, always-on-top Windows DPS meter and combat-awareness overlay for **Ev
 
 Project page: https://github.com/khadesh/SpyxysDPSMeter
 
+## Installer located in the project root:
+
+```text
+SpyxysDPSMeter-Setup-1.0.0-win-x64.exe
+```
+
 ## Features
 
 ### Live EverQuest log monitoring

@@ -7,7 +7,7 @@ Project page: https://github.com/khadesh/SpyxysDPSMeter
 ## Installer located in the project root:
 
 ```text
-SpyxysDPSMeter-Setup-1.0.0-win-x64.exe
+SpyxysDPSMeter-Setup-1.X.Y-win-x64.exe
 ```
 
 ## Features

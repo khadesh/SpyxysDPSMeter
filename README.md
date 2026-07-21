@@ -35,12 +35,26 @@ Gear menu → Log Directory → Change Log Directory...
 
 The selected directory is saved in `settings.json`. Use **Revert to Default** to return to the built-in path.
 
+### Refresh rate
+
+The gear menu provides a **Refresh Rate** option that controls how often the meter checks the active EverQuest log for newly appended lines:
+
+- `0.2s`
+- `0.5s`
+- `1.0s` — default
+- `2.0s`
+- `3.0s`
+- `5.0s`
+
+The selected rate takes effect immediately and is saved in `settings.json`. Faster rates make new combat events appear sooner but cause the log file to be checked more frequently. When the meter is hidden in the Windows system tray, active-log reading is temporarily reduced to `5.0s` to lower background activity. Restoring the window immediately returns to the player's selected rate without changing the saved setting. This setting changes active-log reading only; the meter still scans periodically for a newer character log.
+
 ### Damage and DPS
 
 - Groups damage by attacker.
 - Calculates DPS from a rolling 30-second damage window.
 - Uses at least one second as the divisor to avoid inflated startup values.
 - Tracks direct attacks, spell damage, damage-over-time ticks, and damage-shield damage.
+- Damage against the player, the player's pet, or a group member immediately classifies the source as hostile.
 - Misses, parries, dodges, blocks, and ripostes update recent targeting during an active encounter.
 - A kill creates a three-second encounter barrier:
   - damage inside the barrier continues the current encounter;
@@ -49,14 +63,50 @@ The selected directory is saved in `settings.json`. Use **Revert to Default** to
 
 ### Damage spell-cast indicators
 
-Temporary red circle indicators appear beside any recognized entity when it begins casting a damage spell:
+Temporary red indicators appear beside any recognized entity when it begins casting a damage spell:
 
-- `●` — a direct-damage spell is being cast;
-- `○` — a damage-over-time spell is being cast.
+- `●` — single-target direct-damage spell;
+- `○` — single-target damage-over-time spell;
+- `■` — AOE or PBAE direct-damage spell;
+- `□` — AOE damage-over-time spell.
 
-The indicators remain visible for four seconds. They can appear for the monitored player, group members, pets, enemies, and other parsed casters.
+All four damage indicators are red and remain visible for four seconds. They can appear for the monitored player, group members, pets, enemies, and other parsed casters.
 
-Damage spells are recognized from built-in direct-damage and DoT spell lists, known spell-family patterns, and spell names learned from actual damage log records during the current run. When an unknown spell is learned from a direct-damage hit or DoT tick, later casts of that spell receive the appropriate filled or hollow red circle.
+Damage spells are recognized from built-in direct-damage, DoT, and area-damage spell lists, expanded AE/AOE/PBAE spell-family patterns, and spell names learned from actual damage records during the current run. Al'Kabor spiral spells, rain, column, pillar, circle, tears, Jyll's, and other recognized area families use square markers.
+
+The meter also learns area damage dynamically. When the same source and spell damage multiple distinct targets within a short window, that spell is remembered as area damage for the rest of the run. If its current cast indicator is still visible, the meter immediately changes that indicator from a circle to the appropriate filled or hollow square.
+
+### Teleportation spell indicators
+
+Teleportation and evacuation spells use a golden indicator:
+
+- `◆` — Gate, portal, ring, circle, translocate, evacuate, succor, relocation, or another recognized teleportation spell.
+
+The golden indicator remains visible for four seconds. When **Spell Casting Subtext** is enabled, the teleportation spell name is also shown in the same golden hue. Recognized teleportation spells are excluded from damage-spell classification, including teleport spell families whose names begin with `Circle of`.
+
+### Spell-casting subtext
+
+The **Spell Casting Subtext** display option shows the latest spell being cast beneath an entity's name:
+
+```text
+casting Complete Healing
+```
+
+The spell name is color-coded using the same categories as the meter's other spell indicators:
+
+- healing — green;
+- teleportation and evacuation — golden;
+- direct damage and damage-over-time — red;
+- charm — bright pink;
+- root — bright orange;
+- lull / pacify — bright red;
+- mesmerize — bluish green;
+- stun — bright purple;
+- otherwise unclassified spells — bright magenta.
+
+The casting line can appear for the monitored player, group members, pets, enemies, and unknown entities when unknown entities are enabled. It remains visible for three seconds. If the same entity starts another spell during that time, the newer spell immediately replaces the previous one.
+
+Casting subtext is displayed as an additional line, so it can remain visible at the same time as main-assist target or target-mismatch subtext. The toggle is saved in `settings.json`.
 
 ### Recent-attacker markers
 
@@ -80,7 +130,19 @@ The meter uses distinct row/text colors for:
 - known enemies;
 - unclassified entities.
 
-The **Unknown Entities** setting controls whether unclassified combatants are displayed.
+The **Unknown Entities** setting continuously controls whether unclassified combatants are displayed. When disabled, unknown rows remain filtered out even when new damage, healing, crowd-control, or spell-cast events arrive.
+
+### Immediate hostile classification
+
+An entity is immediately classified as hostile when it:
+
+- deals damage to the monitored character;
+- deals damage to the monitored character's pet;
+- deals damage to a known or manually tagged group member;
+- casts a recognized damaging or crowd-control spell that targets one of those protected entities;
+- lands a recognized charm, root, lull, mesmerize, or stun effect on one of those protected entities.
+
+The meter correlates harmful spell effects with recent cast-start messages to identify the caster. The player, owned pets, and known group members are never marked hostile by this rule. Hostile classification no longer waits for the enemy to die, and it remains active even when **Unknown Entities** is disabled.
 
 ### Group detection and manual tagging
 
@@ -150,10 +212,11 @@ The meter recognizes these hard-CC categories:
 
 Indicator shapes:
 
-- `▲` — normal/single-target CC;
-- `■` — recognized AOE mesmerize or stun.
+- `▲` — a normal/single-target CC spell is being cast;
+- `■` — a recognized AOE mesmerize or stun is being cast;
+- `X` — a target is affected by any recognized CC spell.
 
-A cast indicator is shown on the caster for four seconds. A landed-effect indicator is shown on the affected target for six seconds. Temporary indicators fade near expiration.
+Cast indicators appear on the caster for four seconds. Every landed CC effect uses an `X` on the affected target for six seconds, colored according to the CC category. This applies to the monitored player, allies, enemies, and every other recognized target. Temporary indicators fade near expiration.
 
 Recognized CC targets are temporarily added to the table even when they have no damage row.
 
@@ -186,7 +249,9 @@ The gear menu can toggle:
 - Platinum/h;
 - unknown entities;
 - always-visible group members;
-- main-assist indicators.
+- main-assist indicators;
+- spell-casting subtext;
+- active-log refresh rate.
 
 Damage and DPS numbers can be aligned left or right.
 
@@ -196,6 +261,8 @@ Damage and DPS numbers can be aligned left or right.
 - Double-clicking the tray icon restores the window.
 - The tray menu provides **Show Spyxy's DPS Meter** and **Exit**.
 - Timers and log monitoring continue while the window is hidden.
+- While hidden, the active-log refresh interval temporarily changes to `5.0s` to reduce background activity.
+- Restoring the window immediately reapplies the refresh rate selected in the gear menu.
 - Launching a second copy restores the existing window and immediately closes the new process before it reads any logs.
 
 ### Reset button
@@ -207,7 +274,7 @@ The reset button clears current:
 - XP tracking;
 - platinum tracking;
 - target history;
-- temporary healing, damage-spell, and CC indicators.
+- temporary healing, teleportation, damage-spell, spell-casting subtext, and CC indicators.
 
 It does not erase saved application settings.
 
@@ -244,7 +311,7 @@ Settings are serialized as JSON to:
 <application folder>\settings.json
 ```
 
-The settings file includes display preferences, platinum mode, manual group members, main assist, the selected log directory, and the saved window position and size.
+The settings file includes display preferences, platinum mode, manual group members, main assist, the spell-casting subtext toggle, the active-log refresh rate, the selected log directory, and the saved window position and size.
 
 Example log-directory setting:
 

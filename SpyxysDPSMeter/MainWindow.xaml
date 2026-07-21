@@ -155,6 +155,52 @@
                                               IsChecked="True"
                                               StaysOpenOnClick="True"
                                               Click="DisplaySettingMenuItem_Click"/>
+                                    <MenuItem x:Name="SpellCastingSubtextMenuItem"
+                                              Header="Spell Casting Subtext"
+                                              Tag="SpellCastingSubtext"
+                                              IsCheckable="True"
+                                              IsChecked="True"
+                                              StaysOpenOnClick="True"
+                                              Click="DisplaySettingMenuItem_Click"/>
+                                    <MenuItem Header="Refresh Rate">
+                                        <MenuItem x:Name="RefreshRate02MenuItem"
+                                                  Header="0.2s"
+                                                  Tag="0.2"
+                                                  IsCheckable="True"
+                                                  StaysOpenOnClick="True"
+                                                  Click="RefreshRateMenuItem_Click"/>
+                                        <MenuItem x:Name="RefreshRate05MenuItem"
+                                                  Header="0.5s"
+                                                  Tag="0.5"
+                                                  IsCheckable="True"
+                                                  StaysOpenOnClick="True"
+                                                  Click="RefreshRateMenuItem_Click"/>
+                                        <MenuItem x:Name="RefreshRate10MenuItem"
+                                                  Header="1.0s (Default)"
+                                                  Tag="1.0"
+                                                  IsCheckable="True"
+                                                  IsChecked="True"
+                                                  StaysOpenOnClick="True"
+                                                  Click="RefreshRateMenuItem_Click"/>
+                                        <MenuItem x:Name="RefreshRate20MenuItem"
+                                                  Header="2.0s"
+                                                  Tag="2.0"
+                                                  IsCheckable="True"
+                                                  StaysOpenOnClick="True"
+                                                  Click="RefreshRateMenuItem_Click"/>
+                                        <MenuItem x:Name="RefreshRate30MenuItem"
+                                                  Header="3.0s"
+                                                  Tag="3.0"
+                                                  IsCheckable="True"
+                                                  StaysOpenOnClick="True"
+                                                  Click="RefreshRateMenuItem_Click"/>
+                                        <MenuItem x:Name="RefreshRate50MenuItem"
+                                                  Header="5.0s"
+                                                  Tag="5.0"
+                                                  IsCheckable="True"
+                                                  StaysOpenOnClick="True"
+                                                  Click="RefreshRateMenuItem_Click"/>
+                                    </MenuItem>
                                     <Separator/>
                                     <MenuItem x:Name="LogDirectoryMenuItem"
                                               Header="Log Directory">
@@ -424,6 +470,31 @@
                                                     </Style>
                                                 </TextBlock.Style>
                                             </TextBlock>
+
+                                            <Grid TextBlock.FontSize="10">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                </Grid.ColumnDefinitions>
+                                                <Grid.Style>
+                                                    <Style TargetType="Grid">
+                                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding HasCastingSubtext}" Value="True">
+                                                                <Setter Property="Visibility" Value="Visible"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Grid.Style>
+                                                <TextBlock Grid.Column="0"
+                                                           Text="casting "
+                                                           Foreground="#FFC4C8CF"/>
+                                                <TextBlock Grid.Column="1"
+                                                           Text="{Binding CastingSpellName}"
+                                                           Foreground="{Binding CastingSpellBrush}"
+                                                           FontWeight="SemiBold"
+                                                           TextTrimming="CharacterEllipsis"/>
+                                            </Grid>
                                         </StackPanel>
 
                                         <TextBlock Grid.Column="2"

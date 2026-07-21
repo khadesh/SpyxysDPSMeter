@@ -40,6 +40,12 @@ namespace SpyxysDPSMeter
         private const int CrowdControlLandedIndicatorSeconds = 6;
         private const int RecentCrowdControlCastSeconds = 6;
         private const int DamageSpellCastIndicatorSeconds = 4;
+        private const int SpellCastingSubtextSeconds = 3;
+        private const int HostileSpellCorrelationSeconds = 12;
+        private const int AreaDamageLearningWindowSeconds = 2;
+        private const int TeleportationSpellCastIndicatorSeconds = 4;
+        private const double DefaultLogRefreshIntervalSeconds = 1.0;
+        private const double BackgroundLogRefreshIntervalSeconds = 5.0;
         private const int WindowPlacementSaveDelayMilliseconds = 400;
 
         private const string SingleInstanceMutexName =
@@ -490,7 +496,57 @@ namespace SpyxysDPSMeter
                 "Color Shock",
                 "Chords of Dissonance",
                 "Denon's Disruptive Discord",
-                "Selo's Chords of Cessation"
+                "Selo's Chords of Cessation",
+                "Numbing Cold",
+                "Icestrike",
+                "Project Lightning",
+                "Fire Spiral of Al'Kabor",
+                "Frost Spiral of Al'Kabor",
+                "Shock Spiral of Al'Kabor",
+                "Force Spiral of Al'Kabor",
+                "Energy Storm",
+                "Lava Storm",
+                "Frost Storm",
+                "Lightning Storm",
+                "Flame Flux",
+                "Cast Force",
+                "Thunderclap",
+                "Maelstrom of Electricity",
+                "Scintillation",
+                "Torrent of Ice",
+                "Vengeance of Al'Kabor",
+                "Retribution of Al'Kabor",
+                "Devouring Flames of Al'Kabor",
+                "Super Nova",
+                "Fire",
+                "Lightning Blast",
+                "Lightning Strike",
+                "Avalanche",
+                "Frosty Death",
+                "Frosty Death2"
+            };
+
+        private static readonly HashSet<string> TeleportationSpellNames =
+            new(StringComparer.OrdinalIgnoreCase)
+            {
+                "Gate",
+                "Fade",
+                "Yonder",
+                "Abscond",
+                "Egress",
+                "Exodus",
+                "Levant",
+                "Shadow Step",
+                "Markar's Relocation",
+                "Markars Relocation",
+                "Tishan's Relocation",
+                "Wind of the North",
+                "Wind of the South",
+                "Great Divide",
+                "Cobalt Scar",
+                "Wakening Lands",
+                "Alter Plane Hate",
+                "Alter Plane Sky"
             };
 
         private static readonly HashSet<string> CharmSpellNames =
@@ -617,6 +673,10 @@ namespace SpyxysDPSMeter
             FrozenBrush(255, 89, 255, 138);
         private static readonly global::System.Windows.Media.Brush DamageSpellIndicatorBrush =
             FrozenBrush(255, 255, 76, 76);
+        private static readonly global::System.Windows.Media.Brush UnclassifiedSpellIndicatorBrush =
+            FrozenBrush(255, 255, 74, 224);
+        private static readonly global::System.Windows.Media.Brush TeleportationSpellIndicatorBrush =
+            FrozenBrush(255, 255, 196, 64);
         private static readonly global::System.Windows.Media.Brush CharmIndicatorBrush =
             FrozenBrush(255, 255, 79, 216);
         private static readonly global::System.Windows.Media.Brush RootIndicatorBrush =
@@ -666,12 +726,20 @@ namespace SpyxysDPSMeter
         private readonly List<RecentLayOnHandsCast> _recentLayOnHandsCasts = new();
         private readonly Dictionary<string, DateTime> _healingAnimationUntil =
             new(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, RecentSpellCast> _latestSpellCasts =
+            new(StringComparer.OrdinalIgnoreCase);
+        private readonly List<RecentSpellCastSource> _recentSpellCastSources = new();
         private readonly HashSet<string> _learnedHealingSpellNames =
             new(StringComparer.OrdinalIgnoreCase);
         private readonly HashSet<string> _learnedDirectDamageSpellNames =
             new(StringComparer.OrdinalIgnoreCase);
         private readonly HashSet<string> _learnedDamageOverTimeSpellNames =
             new(StringComparer.OrdinalIgnoreCase);
+        private readonly HashSet<string> _learnedAreaDamageSpellNames =
+            new(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, RecentAreaDamageObservation>
+            _recentAreaDamageObservations =
+                new(StringComparer.OrdinalIgnoreCase);
 
         private string _logDirectory = DefaultLogDirectory;
         private string? _activeFilePath;
@@ -704,6 +772,9 @@ namespace SpyxysDPSMeter
         private bool _useThrottledPlatinumRate = true;
         private bool _alwaysShowGroupMembers = true;
         private bool _showMainAssistIndicators = true;
+        private bool _showSpellCastingSubtext = true;
+        private double _logRefreshIntervalSeconds =
+            DefaultLogRefreshIntervalSeconds;
         private string? _mainAssistName;
 
         public MainWindow()
@@ -732,7 +803,8 @@ namespace SpyxysDPSMeter
 
             _readTimer = new DispatcherTimer(DispatcherPriority.Background)
             {
-                Interval = TimeSpan.FromSeconds(1)
+                Interval = TimeSpan.FromSeconds(
+                    _logRefreshIntervalSeconds)
             };
             _readTimer.Tick += ReadTimer_Tick;
 
@@ -1189,6 +1261,9 @@ namespace SpyxysDPSMeter
 
             ShowInTaskbar = false;
             Hide();
+
+            ApplyReadTimerInterval(
+                BackgroundLogRefreshIntervalSeconds);
         }
 
         private void ShowFromSystemTray()
@@ -1205,8 +1280,20 @@ namespace SpyxysDPSMeter
                 WindowState = WindowState.Normal;
             }
 
+            ApplyReadTimerInterval(
+                _logRefreshIntervalSeconds);
+
             Activate();
             Focus();
+        }
+
+        private void ApplyReadTimerInterval(
+            double intervalSeconds)
+        {
+            _readTimer.Interval =
+                TimeSpan.FromSeconds(
+                    NormalizeLogRefreshIntervalSeconds(
+                        intervalSeconds));
         }
 
         private void ExitApplication()
@@ -1594,6 +1681,10 @@ namespace SpyxysDPSMeter
 
         private void HandleDamageEvent(DamageEvent damageEvent)
         {
+            MarkHostileIfThreatensProtectedEntity(
+                damageEvent.Source,
+                damageEvent.Target);
+
             if (_pendingBarrierTimestamp.HasValue)
             {
                 if (damageEvent.Timestamp <=
@@ -1849,25 +1940,51 @@ namespace SpyxysDPSMeter
             {
                 string spellName =
                     receivedSpellMatch.Groups["spell"].Value;
+                string target = NormalizeVisualEntity(
+                    receivedSpellMatch.Groups["target"].Value,
+                    null);
 
-                if (TryClassifyCrowdControlSpell(
+                bool isDamageSpell =
+                    TryClassifyDamageSpell(
+                        spellName,
+                        out _,
+                        out _);
+
+                bool isCrowdControlSpell =
+                    TryClassifyCrowdControlSpell(
                         spellName,
                         out CrowdControlType type,
-                        out bool isAreaEffect))
+                        out bool isAreaEffect);
+
+                if (isDamageSpell || isCrowdControlSpell)
+                {
+                    string? caster =
+                        FindRecentCasterForSpell(
+                            spellName,
+                            target);
+
+                    MarkHostileIfThreatensProtectedEntity(
+                        caster,
+                        target);
+                }
+
+                if (isCrowdControlSpell)
                 {
                     if (!isInitialLoad)
                     {
-                        string target = NormalizeVisualEntity(
-                            receivedSpellMatch.Groups["target"].Value,
-                            null);
-
                         AddCrowdControlLandedIndicator(
                             target,
                             type,
                             isAreaEffect,
-                            logTimestamp);
+                            logTimestamp,
+                            spellName);
                     }
 
+                    return true;
+                }
+
+                if (isDamageSpell)
+                {
                     return true;
                 }
             }
@@ -2027,6 +2144,23 @@ namespace SpyxysDPSMeter
                 return;
             }
 
+            TrackRecentSpellCastSource(
+                caster,
+                spellName);
+            TrackLatestSpellCast(caster, spellName);
+
+            if (IsTeleportationSpell(spellName))
+            {
+                AddSpecialIndicator(
+                    caster,
+                    "◆",
+                    TeleportationSpellIndicatorBrush,
+                    $"Casting teleportation: {spellName}",
+                    TeleportationSpellCastIndicatorSeconds,
+                    logTimestamp);
+                return;
+            }
+
             if (IsLayOnHandsSpell(spellName))
             {
                 _recentLayOnHandsCasts.Add(
@@ -2072,21 +2206,35 @@ namespace SpyxysDPSMeter
 
             if (TryClassifyDamageSpell(
                     spellName,
-                    out DamageSpellCastType damageSpellType))
+                    out DamageSpellCastType damageSpellType,
+                    out bool isAreaEffectDamage))
             {
                 bool isDamageOverTime =
                     damageSpellType ==
                     DamageSpellCastType.DamageOverTime;
 
+                string damageGlyph =
+                    GetDamageSpellCastGlyph(
+                        damageSpellType,
+                        isAreaEffectDamage);
+
+                string damageScope =
+                    isAreaEffectDamage
+                        ? "area effect "
+                        : string.Empty;
+
                 AddSpecialIndicator(
                     caster,
-                    isDamageOverTime ? "○" : "●",
+                    damageGlyph,
                     DamageSpellIndicatorBrush,
                     isDamageOverTime
-                        ? $"Casting damage over time: {spellName}"
-                        : $"Casting direct damage: {spellName}",
+                        ? $"Casting {damageScope}damage over time: {spellName}"
+                        : $"Casting {damageScope}direct damage: {spellName}",
                     DamageSpellCastIndicatorSeconds,
-                    logTimestamp);
+                    logTimestamp,
+                    BuildDamageSpellCastCorrelationKey(
+                        caster,
+                        spellName));
             }
 
             if (!TryClassifyCrowdControlSpell(
@@ -2111,6 +2259,136 @@ namespace SpyxysDPSMeter
                     isAreaEffect,
                     DateTime.Now.AddSeconds(
                         RecentCrowdControlCastSeconds)));
+        }
+
+        private void TrackRecentSpellCastSource(
+            string caster,
+            string spellName)
+        {
+            caster = NormalizeVisualEntity(caster, null);
+            spellName = CleanSpellName(spellName);
+
+            if (string.IsNullOrWhiteSpace(caster) ||
+                string.IsNullOrWhiteSpace(spellName))
+            {
+                return;
+            }
+
+            _recentSpellCastSources.Add(
+                new RecentSpellCastSource(
+                    caster,
+                    spellName,
+                    DateTime.Now.AddSeconds(
+                        HostileSpellCorrelationSeconds)));
+        }
+
+        private string? FindRecentCasterForSpell(
+            string spellName,
+            string affectedTarget)
+        {
+            string normalizedSpell =
+                NormalizeSpellNameForClassification(
+                    spellName);
+            DateTime now = DateTime.Now;
+
+            return _recentSpellCastSources
+                .Where(entry =>
+                    entry.ExpiresAt > now &&
+                    NormalizeSpellNameForClassification(
+                        entry.Spell)
+                    .Equals(
+                        normalizedSpell,
+                        StringComparison.OrdinalIgnoreCase))
+                .Where(entry =>
+                    !IsProtectedFriendlyEntity(
+                        entry.Caster) ||
+                    !IsProtectedFriendlyEntity(
+                        affectedTarget))
+                .OrderByDescending(entry => entry.ExpiresAt)
+                .Select(entry => entry.Caster)
+                .FirstOrDefault();
+        }
+
+        private string? FindRecentCrowdControlCaster(
+            CrowdControlType type,
+            string affectedTarget)
+        {
+            DateTime now = DateTime.Now;
+
+            return _recentSpellCastSources
+                .Where(entry => entry.ExpiresAt > now)
+                .Where(entry =>
+                    TryClassifyCrowdControlSpell(
+                        entry.Spell,
+                        out CrowdControlType recentType,
+                        out _) &&
+                    recentType == type)
+                .Where(entry =>
+                    !IsProtectedFriendlyEntity(
+                        entry.Caster) ||
+                    !IsProtectedFriendlyEntity(
+                        affectedTarget))
+                .OrderByDescending(entry => entry.ExpiresAt)
+                .Select(entry => entry.Caster)
+                .FirstOrDefault();
+        }
+
+        private void TrackLatestSpellCast(
+            string caster,
+            string spellName)
+        {
+            if (!_showSpellCastingSubtext)
+            {
+                return;
+            }
+
+            caster = NormalizeVisualEntity(caster, null);
+            spellName = CleanSpellName(spellName);
+
+            if (string.IsNullOrWhiteSpace(caster) ||
+                string.IsNullOrWhiteSpace(spellName))
+            {
+                return;
+            }
+
+            _latestSpellCasts[caster] =
+                new RecentSpellCast(
+                    spellName,
+                    GetSpellCastingSubtextBrush(spellName),
+                    DateTime.Now.AddSeconds(
+                        SpellCastingSubtextSeconds));
+        }
+
+        private global::System.Windows.Media.Brush GetSpellCastingSubtextBrush(
+            string spellName)
+        {
+            if (IsTeleportationSpell(spellName))
+            {
+                return TeleportationSpellIndicatorBrush;
+            }
+
+            if (IsHealingSpellName(spellName))
+            {
+                return HealingIndicatorBrush;
+            }
+
+            if (TryClassifyCrowdControlSpell(
+                    spellName,
+                    out CrowdControlType crowdControlType,
+                    out _))
+            {
+                return GetCrowdControlBrush(crowdControlType);
+            }
+
+            if (TryClassifyDamageSpell(
+                    spellName,
+                    out _,
+                    out _))
+            {
+                return DamageSpellIndicatorBrush;
+            }
+
+            return UnclassifiedSpellIndicatorBrush;
         }
 
         private void HandleHealVisual(
@@ -2248,16 +2526,30 @@ namespace SpyxysDPSMeter
             string target,
             CrowdControlType type,
             bool isAreaEffect,
-            DateTime logTimestamp)
+            DateTime logTimestamp,
+            string? spellName = null)
         {
             if (string.IsNullOrWhiteSpace(target))
             {
                 return;
             }
 
+            string? caster =
+                !string.IsNullOrWhiteSpace(spellName)
+                    ? FindRecentCasterForSpell(
+                        spellName,
+                        target)
+                    : FindRecentCrowdControlCaster(
+                        type,
+                        target);
+
+            MarkHostileIfThreatensProtectedEntity(
+                caster,
+                target);
+
             AddSpecialIndicator(
                 target,
-                GetCrowdControlGlyph(type, isAreaEffect),
+                "X",
                 GetCrowdControlBrush(type),
                 $"{GetCrowdControlLabel(type)} landed",
                 CrowdControlLandedIndicatorSeconds,
@@ -2656,6 +2948,9 @@ namespace SpyxysDPSMeter
             _recentLayOnHandsCasts.RemoveAll(
                 entry => entry.ExpiresAt <= now);
 
+            _recentSpellCastSources.RemoveAll(
+                entry => entry.ExpiresAt <= now);
+
             List<string> expiredAnimations =
                 _healingAnimationUntil
                     .Where(pair => pair.Value <= now)
@@ -2666,6 +2961,17 @@ namespace SpyxysDPSMeter
             {
                 _healingAnimationUntil.Remove(entity);
             }
+
+            List<string> expiredSpellCasts =
+                _latestSpellCasts
+                    .Where(pair => pair.Value.ExpiresAt <= now)
+                    .Select(pair => pair.Key)
+                    .ToList();
+
+            foreach (string entity in expiredSpellCasts)
+            {
+                _latestSpellCasts.Remove(entity);
+            }
         }
 
         private void ClearSpecialVisualEvents()
@@ -2673,21 +2979,32 @@ namespace SpyxysDPSMeter
             _specialIndicatorEvents.Clear();
             _recentCrowdControlCasts.Clear();
             _recentLayOnHandsCasts.Clear();
+            _recentSpellCastSources.Clear();
+            _recentAreaDamageObservations.Clear();
             _healingAnimationUntil.Clear();
+            _latestSpellCasts.Clear();
         }
 
         private bool TryClassifyDamageSpell(
             string spellName,
-            out DamageSpellCastType damageSpellType)
+            out DamageSpellCastType damageSpellType,
+            out bool isAreaEffect)
         {
             string normalized =
                 NormalizeSpellNameForClassification(spellName);
 
-            if (string.IsNullOrWhiteSpace(normalized))
+            if (string.IsNullOrWhiteSpace(normalized) ||
+                IsTeleportationSpell(normalized))
             {
                 damageSpellType = default;
+                isAreaEffect = false;
                 return false;
             }
+
+            isAreaEffect =
+                AreaDamageSpellNames.Contains(normalized) ||
+                _learnedAreaDamageSpellNames.Contains(normalized) ||
+                IsRecognizedAreaDamageSpellPattern(normalized);
 
             if (DamageOverTimeSpellNames.Contains(normalized) ||
                 _learnedDamageOverTimeSpellNames.Contains(normalized) ||
@@ -2699,7 +3016,7 @@ namespace SpyxysDPSMeter
             }
 
             if (DirectDamageSpellNames.Contains(normalized) ||
-                AreaDamageSpellNames.Contains(normalized) ||
+                isAreaEffect ||
                 _learnedDirectDamageSpellNames.Contains(normalized) ||
                 IsRecognizedDirectDamageSpellPattern(normalized))
             {
@@ -2709,7 +3026,58 @@ namespace SpyxysDPSMeter
             }
 
             damageSpellType = default;
+            isAreaEffect = false;
             return false;
+        }
+
+        private static string GetDamageSpellCastGlyph(
+            DamageSpellCastType damageSpellType,
+            bool isAreaEffect)
+        {
+            if (isAreaEffect)
+            {
+                return damageSpellType ==
+                       DamageSpellCastType.DamageOverTime
+                    ? "□"
+                    : "■";
+            }
+
+            return damageSpellType ==
+                   DamageSpellCastType.DamageOverTime
+                ? "○"
+                : "●";
+        }
+
+        private static bool IsRecognizedAreaDamageSpellPattern(
+            string normalized)
+        {
+            return normalized.StartsWith(
+                       "rain of ",
+                       StringComparison.OrdinalIgnoreCase) ||
+                   normalized.StartsWith(
+                       "column of ",
+                       StringComparison.OrdinalIgnoreCase) ||
+                   normalized.StartsWith(
+                       "pillar of ",
+                       StringComparison.OrdinalIgnoreCase) ||
+                   normalized.StartsWith(
+                       "circle of ",
+                       StringComparison.OrdinalIgnoreCase) ||
+                   normalized.StartsWith(
+                       "tears of ",
+                       StringComparison.OrdinalIgnoreCase) ||
+                   normalized.StartsWith(
+                       "jyll's ",
+                       StringComparison.OrdinalIgnoreCase) ||
+                   normalized.StartsWith(
+                       "chords of ",
+                       StringComparison.OrdinalIgnoreCase) ||
+                   normalized.StartsWith(
+                       "selo's chords of ",
+                       StringComparison.OrdinalIgnoreCase) ||
+                   normalized.Contains(
+                       " spiral of ",
+                       StringComparison.OrdinalIgnoreCase);
         }
 
         private static bool IsRecognizedDirectDamageSpellPattern(
@@ -2727,18 +3095,7 @@ namespace SpyxysDPSMeter
                    normalized.StartsWith(
                        "lure of ",
                        StringComparison.OrdinalIgnoreCase) ||
-                   normalized.StartsWith(
-                       "rain of ",
-                       StringComparison.OrdinalIgnoreCase) ||
-                   normalized.StartsWith(
-                       "column of ",
-                       StringComparison.OrdinalIgnoreCase) ||
-                   normalized.StartsWith(
-                       "pillar of ",
-                       StringComparison.OrdinalIgnoreCase) ||
-                   normalized.StartsWith(
-                       "circle of ",
-                       StringComparison.OrdinalIgnoreCase);
+                   IsRecognizedAreaDamageSpellPattern(normalized);
         }
 
         private static bool IsRecognizedDamageOverTimeSpellPattern(
@@ -2747,6 +3104,220 @@ namespace SpyxysDPSMeter
             return normalized.StartsWith(
                        "tuyen's chant of ",
                        StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool IsTeleportationSpell(
+            string spellName)
+        {
+            string normalized =
+                NormalizeSpellNameForClassification(spellName);
+
+            if (string.IsNullOrWhiteSpace(normalized))
+            {
+                return false;
+            }
+
+            // These names intentionally take priority over broad teleport
+            // families such as "Circle of ...".
+            if (AreaDamageSpellNames.Contains(normalized))
+            {
+                return false;
+            }
+
+            if (TeleportationSpellNames.Contains(normalized))
+            {
+                return true;
+            }
+
+            return normalized.EndsWith(
+                       " gate",
+                       StringComparison.OrdinalIgnoreCase) ||
+                   normalized.EndsWith(
+                       " portal",
+                       StringComparison.OrdinalIgnoreCase) ||
+                   normalized.StartsWith(
+                       "translocate ",
+                       StringComparison.OrdinalIgnoreCase) ||
+                   normalized.StartsWith(
+                       "translocate:",
+                       StringComparison.OrdinalIgnoreCase) ||
+                   normalized.StartsWith(
+                       "evacuate",
+                       StringComparison.OrdinalIgnoreCase) ||
+                   normalized.StartsWith(
+                       "succor",
+                       StringComparison.OrdinalIgnoreCase) ||
+                   normalized.StartsWith(
+                       "ring of ",
+                       StringComparison.OrdinalIgnoreCase) ||
+                   normalized.StartsWith(
+                       "circle of ",
+                       StringComparison.OrdinalIgnoreCase) ||
+                   normalized.StartsWith(
+                       "teleport ",
+                       StringComparison.OrdinalIgnoreCase) ||
+                   normalized.StartsWith(
+                       "teleport:",
+                       StringComparison.OrdinalIgnoreCase) ||
+                   normalized.StartsWith(
+                       "depart ",
+                       StringComparison.OrdinalIgnoreCase) ||
+                   normalized.StartsWith(
+                       "depart:",
+                       StringComparison.OrdinalIgnoreCase) ||
+                   normalized.StartsWith(
+                       "zephyr of ",
+                       StringComparison.OrdinalIgnoreCase) ||
+                   normalized.StartsWith(
+                       "alter plane ",
+                       StringComparison.OrdinalIgnoreCase) ||
+                   normalized.StartsWith(
+                       "alter plane:",
+                       StringComparison.OrdinalIgnoreCase) ||
+                   normalized.StartsWith(
+                       "plane shift ",
+                       StringComparison.OrdinalIgnoreCase) ||
+                   normalized.StartsWith(
+                       "plane shift:",
+                       StringComparison.OrdinalIgnoreCase) ||
+                   normalized.EndsWith(
+                       " relocation",
+                       StringComparison.OrdinalIgnoreCase);
+        }
+
+        private string BuildDamageSpellCastCorrelationKey(
+            string caster,
+            string spellName)
+        {
+            return string.Join(
+                "|",
+                "damage-cast",
+                NormalizeVisualEntity(caster, null),
+                NormalizeSpellNameForClassification(spellName));
+        }
+
+        private void LearnAreaDamageSpell(
+            DateTime timestamp,
+            string source,
+            string target,
+            string rawSpellName,
+            DamageSpellCastType damageSpellType)
+        {
+            string normalizedSpell =
+                NormalizeSpellNameForClassification(rawSpellName);
+
+            if (string.IsNullOrWhiteSpace(normalizedSpell) ||
+                IsTeleportationSpell(normalizedSpell))
+            {
+                return;
+            }
+
+            string normalizedSource =
+                NormalizeVisualEntity(source, null);
+            string normalizedTarget =
+                NormalizeVisualEntity(target, null);
+
+            if (string.IsNullOrWhiteSpace(normalizedSource) ||
+                string.IsNullOrWhiteSpace(normalizedTarget))
+            {
+                return;
+            }
+
+            DateTime cutoff =
+                timestamp.AddSeconds(
+                    -AreaDamageLearningWindowSeconds);
+
+            foreach (string expiredKey in
+                     _recentAreaDamageObservations
+                         .Where(entry =>
+                             entry.Value.LastTimestamp < cutoff)
+                         .Select(entry => entry.Key)
+                         .ToList())
+            {
+                _recentAreaDamageObservations.Remove(expiredKey);
+            }
+
+            string observationKey =
+                string.Join(
+                    "|",
+                    normalizedSource,
+                    normalizedSpell);
+
+            if (!_recentAreaDamageObservations.TryGetValue(
+                    observationKey,
+                    out RecentAreaDamageObservation? observation) ||
+                timestamp - observation.LastTimestamp >
+                    TimeSpan.FromSeconds(
+                        AreaDamageLearningWindowSeconds) ||
+                timestamp < observation.LastTimestamp)
+            {
+                observation =
+                    new RecentAreaDamageObservation(timestamp);
+
+                _recentAreaDamageObservations[observationKey] =
+                    observation;
+            }
+
+            observation.LastTimestamp = timestamp;
+            observation.Targets.Add(normalizedTarget);
+
+            if (observation.Targets.Count < 2)
+            {
+                return;
+            }
+
+            _learnedAreaDamageSpellNames.Add(normalizedSpell);
+
+            PromoteActiveDamageSpellIndicatorToArea(
+                normalizedSource,
+                rawSpellName,
+                damageSpellType);
+        }
+
+        private void PromoteActiveDamageSpellIndicatorToArea(
+            string caster,
+            string spellName,
+            DamageSpellCastType damageSpellType)
+        {
+            string correlationKey =
+                BuildDamageSpellCastCorrelationKey(
+                    caster,
+                    spellName);
+
+            string glyph =
+                GetDamageSpellCastGlyph(
+                    damageSpellType,
+                    isAreaEffect: true);
+
+            string toolTip =
+                damageSpellType ==
+                    DamageSpellCastType.DamageOverTime
+                    ? $"Casting area effect damage over time: {spellName}"
+                    : $"Casting area effect direct damage: {spellName}";
+
+            for (int index = 0;
+                 index < _specialIndicatorEvents.Count;
+                 index++)
+            {
+                SpecialIndicatorEvent indicator =
+                    _specialIndicatorEvents[index];
+
+                if (indicator.ExpiresAt <= DateTime.Now ||
+                    !string.Equals(
+                        indicator.CorrelationKey,
+                        correlationKey,
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                _specialIndicatorEvents[index] =
+                    indicator with
+                    {
+                        Glyph = glyph,
+                        ToolTip = toolTip
+                    };
+            }
         }
 
         private void LearnDamageSpell(
@@ -2997,6 +3568,41 @@ namespace SpyxysDPSMeter
                 CrowdControlType.Stun => "Stun",
                 _ => "Crowd control"
             };
+        }
+
+        private bool IsProtectedFriendlyEntity(
+            string entity)
+        {
+            return !string.IsNullOrWhiteSpace(entity) &&
+                   (IsSelf(entity) ||
+                    IsOwnedPet(entity) ||
+                    IsGroupMember(entity));
+        }
+
+        private void MarkHostileIfThreatensProtectedEntity(
+            string? source,
+            string target)
+        {
+            if (string.IsNullOrWhiteSpace(source) ||
+                string.IsNullOrWhiteSpace(target))
+            {
+                return;
+            }
+
+            source = NormalizeVisualEntity(
+                source,
+                null);
+            target = NormalizeVisualEntity(
+                target,
+                null);
+
+            if (!IsProtectedFriendlyEntity(target) ||
+                IsProtectedFriendlyEntity(source))
+            {
+                return;
+            }
+
+            _knownBadGuys.Add(source);
         }
 
         private bool IsHostileEntity(string entity)
@@ -3283,6 +3889,13 @@ namespace SpyxysDPSMeter
                 LearnDamageSpell(
                     ability,
                     damageSpellType.Value);
+
+                LearnAreaDamageSpell(
+                    timestamp,
+                    source,
+                    target,
+                    ability,
+                    damageSpellType.Value);
             }
 
             return new DamageEvent(
@@ -3401,6 +4014,20 @@ namespace SpyxysDPSMeter
                 displaySources.Add(entity);
             }
 
+            if (_showSpellCastingSubtext)
+            {
+                foreach (string entity in _latestSpellCasts.Keys)
+                {
+                    displaySources.Add(entity);
+                }
+            }
+
+            // Apply the unknown-entity filter after every possible source
+            // has been added. This prevents temporary cast, healing, or CC
+            // visuals from reintroducing hidden unknown rows.
+            displaySources.RemoveWhere(
+                entity => !ShouldShowEntity(entity));
+
             string? mainAssistTarget = null;
             if (_fightActive &&
                 _showMainAssistIndicators &&
@@ -3500,6 +4127,14 @@ namespace SpyxysDPSMeter
                             out DateTime healingUntil) &&
                         healingUntil > DateTime.Now;
 
+                    RecentSpellCast? latestSpellCast = null;
+                    bool hasCastingSubtext =
+                        _showSpellCastingSubtext &&
+                        _latestSpellCasts.TryGetValue(
+                            source,
+                            out latestSpellCast) &&
+                        latestSpellCast.ExpiresAt > DateTime.Now;
+
                     return new DamageRow
                     {
                         RawEntityName = source,
@@ -3527,6 +4162,13 @@ namespace SpyxysDPSMeter
                         TargetSubtext = hasAssistMismatch
                             ? $"targeting {currentTarget}"
                             : string.Empty,
+                        HasCastingSubtext = hasCastingSubtext,
+                        CastingSpellName = hasCastingSubtext
+                            ? latestSpellCast!.Spell
+                            : string.Empty,
+                        CastingSpellBrush = hasCastingSubtext
+                            ? latestSpellCast!.Foreground
+                            : UnclassifiedSpellIndicatorBrush,
                         Indicators = indicators,
                         ShowHealingAnimation = showHealingAnimation
                     };
@@ -4357,6 +4999,14 @@ namespace SpyxysDPSMeter
                 case "MainAssistIndicators":
                     _showMainAssistIndicators = isEnabled;
                     break;
+
+                case "SpellCastingSubtext":
+                    _showSpellCastingSubtext = isEnabled;
+                    if (!isEnabled)
+                    {
+                        _latestSpellCasts.Clear();
+                    }
+                    break;
             }
 
             SaveSettings();
@@ -4401,6 +5051,34 @@ namespace SpyxysDPSMeter
             ApplySettingsToMenuItems();
             SaveSettings();
             RefreshDisplay();
+        }
+
+        private void RefreshRateMenuItem_Click(
+            object sender,
+            RoutedEventArgs e)
+        {
+            if (sender is not global::System.Windows.Controls.MenuItem menuItem ||
+                menuItem.Tag is not string intervalText ||
+                !double.TryParse(
+                    intervalText,
+                    NumberStyles.Float,
+                    CultureInfo.InvariantCulture,
+                    out double requestedInterval))
+            {
+                return;
+            }
+
+            _logRefreshIntervalSeconds =
+                NormalizeLogRefreshIntervalSeconds(
+                    requestedInterval);
+
+            ApplyReadTimerInterval(
+                IsVisible
+                    ? _logRefreshIntervalSeconds
+                    : BackgroundLogRefreshIntervalSeconds);
+
+            ApplySettingsToMenuItems();
+            SaveSettings();
         }
 
         private void DpsGrid_MouseRightButtonUp(
@@ -4592,6 +5270,33 @@ namespace SpyxysDPSMeter
             SetStatus($"{entity} removed from manual group members.");
         }
 
+        private static double NormalizeLogRefreshIntervalSeconds(
+            double intervalSeconds)
+        {
+            double[] supportedIntervals =
+            {
+                0.2,
+                0.5,
+                1.0,
+                2.0,
+                3.0,
+                5.0
+            };
+
+            foreach (double supportedInterval in supportedIntervals)
+            {
+                if (Math.Abs(
+                        intervalSeconds -
+                        supportedInterval) <
+                    0.0001)
+                {
+                    return supportedInterval;
+                }
+            }
+
+            return DefaultLogRefreshIntervalSeconds;
+        }
+
         private void LoadSettings()
         {
             try
@@ -4628,6 +5333,11 @@ namespace SpyxysDPSMeter
                     settings.AlwaysShowGroupMembers;
                 _showMainAssistIndicators =
                     settings.ShowMainAssistIndicators;
+                _showSpellCastingSubtext =
+                    settings.ShowSpellCastingSubtext;
+                _logRefreshIntervalSeconds =
+                    NormalizeLogRefreshIntervalSeconds(
+                        settings.LogRefreshIntervalSeconds);
 
                 try
                 {
@@ -4687,6 +5397,33 @@ namespace SpyxysDPSMeter
                 _alwaysShowGroupMembers;
             MainAssistIndicatorsMenuItem.IsChecked =
                 _showMainAssistIndicators;
+            SpellCastingSubtextMenuItem.IsChecked =
+                _showSpellCastingSubtext;
+
+            RefreshRate02MenuItem.IsChecked =
+                Math.Abs(
+                    _logRefreshIntervalSeconds - 0.2) <
+                0.0001;
+            RefreshRate05MenuItem.IsChecked =
+                Math.Abs(
+                    _logRefreshIntervalSeconds - 0.5) <
+                0.0001;
+            RefreshRate10MenuItem.IsChecked =
+                Math.Abs(
+                    _logRefreshIntervalSeconds - 1.0) <
+                0.0001;
+            RefreshRate20MenuItem.IsChecked =
+                Math.Abs(
+                    _logRefreshIntervalSeconds - 2.0) <
+                0.0001;
+            RefreshRate30MenuItem.IsChecked =
+                Math.Abs(
+                    _logRefreshIntervalSeconds - 3.0) <
+                0.0001;
+            RefreshRate50MenuItem.IsChecked =
+                Math.Abs(
+                    _logRefreshIntervalSeconds - 5.0) <
+                0.0001;
 
             NumberAlignmentLeftMenuItem.IsChecked =
                 !_numbersRightAligned;
@@ -4728,6 +5465,10 @@ namespace SpyxysDPSMeter
                         _alwaysShowGroupMembers,
                     ShowMainAssistIndicators =
                         _showMainAssistIndicators,
+                    ShowSpellCastingSubtext =
+                        _showSpellCastingSubtext,
+                    LogRefreshIntervalSeconds =
+                        _logRefreshIntervalSeconds,
                     LogDirectory =
                         _logDirectory,
                     WindowLeft =
@@ -4835,6 +5576,9 @@ namespace SpyxysDPSMeter
             public string DpsText { get; set; } = string.Empty;
             public string TargetSubtext { get; set; } = string.Empty;
             public string MainAssistTargetSubtext { get; set; } = string.Empty;
+            public string CastingSpellName { get; set; } = string.Empty;
+            public global::System.Windows.Media.Brush CastingSpellBrush { get; set; } =
+                UnclassifiedSpellIndicatorBrush;
             public long RawDamage { get; set; }
             public global::System.Windows.Media.Brush RowBrush { get; set; } = FriendlyRowBrush;
             public global::System.Windows.Media.Brush TextBrush { get; set; } = FriendlyTextBrush;
@@ -4844,6 +5588,7 @@ namespace SpyxysDPSMeter
             public bool IsMainAssist { get; set; }
             public bool HasAssistMismatch { get; set; }
             public bool HasMainAssistTarget { get; set; }
+            public bool HasCastingSubtext { get; set; }
             public bool ShowHealingAnimation { get; set; }
             public List<RowIndicator> Indicators { get; set; } = new();
         }
@@ -4870,6 +5615,9 @@ namespace SpyxysDPSMeter
             public bool UseThrottledPlatinumRate { get; set; } = true;
             public bool AlwaysShowGroupMembers { get; set; } = true;
             public bool ShowMainAssistIndicators { get; set; } = true;
+            public bool ShowSpellCastingSubtext { get; set; } = true;
+            public double LogRefreshIntervalSeconds { get; set; } =
+                DefaultLogRefreshIntervalSeconds;
             public string LogDirectory { get; set; } =
                 DefaultLogDirectory;
             public double? WindowLeft { get; set; }
@@ -4912,6 +5660,30 @@ namespace SpyxysDPSMeter
         private sealed record RecentLayOnHandsCast(
             string Caster,
             DateTime ExpiresAt);
+
+        private sealed record RecentSpellCast(
+            string Spell,
+            global::System.Windows.Media.Brush Foreground,
+            DateTime ExpiresAt);
+
+        private sealed record RecentSpellCastSource(
+            string Caster,
+            string Spell,
+            DateTime ExpiresAt);
+
+        private sealed class RecentAreaDamageObservation
+        {
+            public RecentAreaDamageObservation(
+                DateTime timestamp)
+            {
+                LastTimestamp = timestamp;
+            }
+
+            public DateTime LastTimestamp { get; set; }
+
+            public HashSet<string> Targets { get; } =
+                new(StringComparer.OrdinalIgnoreCase);
+        }
 
         private sealed record SpecialIndicatorEvent(
             string Entity,

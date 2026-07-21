@@ -6,6 +6,14 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
+
+    <!-- Icon embedded into the compiled EXE -->
+    <ApplicationIcon>Assets\icon-spyxy-dps.ico</ApplicationIcon>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- PNG used by the WPF window/taskbar -->
+    <Resource Include="Assets\icon-spyxy-dps.png" />
+  </ItemGroup>
 
 </Project>

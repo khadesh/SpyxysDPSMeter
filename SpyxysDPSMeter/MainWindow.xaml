@@ -16,7 +16,7 @@
         Topmost="True"
         ShowInTaskbar="True"
         Loaded="Window_Loaded"
-        Closed="Window_Closed">
+        Closed="Window_Closed" Icon="/Assets/icon-spyxy-dps.png">
 
     <Grid Margin="6">
         <Border Background="#E8181B20"
@@ -80,6 +80,21 @@
                                               IsChecked="True"
                                               StaysOpenOnClick="True"
                                               Click="DisplaySettingMenuItem_Click"/>
+                                    <MenuItem Header="Number Alignment">
+                                        <MenuItem x:Name="NumberAlignmentLeftMenuItem"
+                                                  Header="Left"
+                                                  Tag="Left"
+                                                  IsCheckable="True"
+                                                  IsChecked="True"
+                                                  StaysOpenOnClick="True"
+                                                  Click="NumericAlignmentMenuItem_Click"/>
+                                        <MenuItem x:Name="NumberAlignmentRightMenuItem"
+                                                  Header="Right"
+                                                  Tag="Right"
+                                                  IsCheckable="True"
+                                                  StaysOpenOnClick="True"
+                                                  Click="NumericAlignmentMenuItem_Click"/>
+                                    </MenuItem>
                                     <Separator/>
                                     <MenuItem x:Name="ExperiencePerHourMenuItem"
                                               Header="XP/h"
@@ -102,10 +117,39 @@
                                               IsChecked="True"
                                               StaysOpenOnClick="True"
                                               Click="DisplaySettingMenuItem_Click"/>
+                                    <MenuItem Header="Platinum Mode">
+                                        <MenuItem x:Name="PlatinumModeNormalMenuItem"
+                                                  Header="Normal"
+                                                  Tag="Normal"
+                                                  IsCheckable="True"
+                                                  StaysOpenOnClick="True"
+                                                  Click="PlatinumModeMenuItem_Click"/>
+                                        <MenuItem x:Name="PlatinumModeThrottledMenuItem"
+                                                  Header="3m Throttled"
+                                                  Tag="Throttled"
+                                                  IsCheckable="True"
+                                                  IsChecked="True"
+                                                  StaysOpenOnClick="True"
+                                                  Click="PlatinumModeMenuItem_Click"/>
+                                    </MenuItem>
                                     <Separator/>
                                     <MenuItem x:Name="UnknownEntitiesMenuItem"
                                               Header="Unknown Entities"
                                               Tag="UnknownEntities"
+                                              IsCheckable="True"
+                                              IsChecked="True"
+                                              StaysOpenOnClick="True"
+                                              Click="DisplaySettingMenuItem_Click"/>
+                                    <MenuItem x:Name="AlwaysShowGroupMembersMenuItem"
+                                              Header="Always Show Group Members"
+                                              Tag="AlwaysShowGroupMembers"
+                                              IsCheckable="True"
+                                              IsChecked="True"
+                                              StaysOpenOnClick="True"
+                                              Click="DisplaySettingMenuItem_Click"/>
+                                    <MenuItem x:Name="MainAssistIndicatorsMenuItem"
+                                              Header="Main Assist Indicators"
+                                              Tag="MainAssistIndicators"
                                               IsCheckable="True"
                                               IsChecked="True"
                                               StaysOpenOnClick="True"
@@ -165,7 +209,7 @@
                           HeadersVisibility="Column"
                           GridLinesVisibility="None"
                           RowHeaderWidth="0"
-                          RowHeight="29"
+                          RowHeight="44"
                           ColumnHeaderHeight="28"
                           SelectionMode="Single"
                           SelectionUnit="FullRow"
@@ -175,7 +219,8 @@
                           HorizontalGridLinesBrush="Transparent"
                           VerticalGridLinesBrush="Transparent"
                           ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                          EnableRowVirtualization="True">
+                          EnableRowVirtualization="True"
+                          MouseRightButtonUp="DpsGrid_MouseRightButtonUp">
 
                     <DataGrid.Resources>
                         <Style TargetType="DataGridColumnHeader">
@@ -214,30 +259,126 @@
                     </DataGrid.Resources>
 
                     <DataGrid.Columns>
-                        <DataGridTextColumn Header="Name"
-                                            Binding="{Binding DisplayName}"
-                                            Width="*"/>
-                        <DataGridTextColumn Header="Damage"
-                                            Binding="{Binding DamageText}"
-                                            Width="95">
-                            <DataGridTextColumn.ElementStyle>
-                                <Style TargetType="TextBlock">
-                                    <Setter Property="TextAlignment" Value="Right"/>
-                                    <Setter Property="VerticalAlignment" Value="Center"/>
-                                </Style>
-                            </DataGridTextColumn.ElementStyle>
-                        </DataGridTextColumn>
-                        <DataGridTextColumn Header="DPS"
-                                            Binding="{Binding DpsText}"
-                                            Width="85">
-                            <DataGridTextColumn.ElementStyle>
-                                <Style TargetType="TextBlock">
-                                    <Setter Property="TextAlignment" Value="Right"/>
-                                    <Setter Property="VerticalAlignment" Value="Center"/>
-                                    <Setter Property="FontWeight" Value="SemiBold"/>
-                                </Style>
-                            </DataGridTextColumn.ElementStyle>
-                        </DataGridTextColumn>
+                        <DataGridTemplateColumn Header="Name" Width="*">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <Grid VerticalAlignment="Center">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+
+                                        <TextBlock Grid.Column="0"
+                                                   Margin="0,0,5,0"
+                                                   VerticalAlignment="Center"
+                                                   FontFamily="Segoe UI Symbol"
+                                                   FontSize="15"
+                                                   Text="⚔">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsMainAssist}" Value="True">
+                                                            <Setter Property="Visibility" Value="Visible"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+
+                                        <StackPanel Grid.Column="1"
+                                                    VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding DisplayName}"
+                                                       TextTrimming="CharacterEllipsis">
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock">
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsMainAssist}" Value="True">
+                                                                <Setter Property="TextDecorations" Value="Underline"/>
+                                                                <Setter Property="FontWeight" Value="Bold"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
+
+                                            <TextBlock Text="{Binding TargetSubtext}"
+                                                       Foreground="#FFFFB0B0"
+                                                       FontSize="10"
+                                                       TextTrimming="CharacterEllipsis">
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock">
+                                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding HasAssistMismatch}" Value="True">
+                                                                <Setter Property="Visibility" Value="Visible"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
+                                        </StackPanel>
+
+                                        <TextBlock Grid.Column="2"
+                                                   Margin="6,0,0,0"
+                                                   VerticalAlignment="Center"
+                                                   Foreground="#FFFF5E5E"
+                                                   FontSize="15"
+                                                   FontWeight="Bold"
+                                                   Text="⚠">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding HasAssistMismatch}" Value="True">
+                                                            <Setter Property="Visibility" Value="Visible"/>
+                                                            <DataTrigger.EnterActions>
+                                                                <BeginStoryboard x:Name="MismatchFlashStoryboard">
+                                                                    <Storyboard RepeatBehavior="Forever"
+                                                                                AutoReverse="True">
+                                                                        <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                                                                         From="1"
+                                                                                         To="0.15"
+                                                                                         Duration="0:0:0.45"/>
+                                                                    </Storyboard>
+                                                                </BeginStoryboard>
+                                                            </DataTrigger.EnterActions>
+                                                            <DataTrigger.ExitActions>
+                                                                <StopStoryboard BeginStoryboardName="MismatchFlashStoryboard"/>
+                                                            </DataTrigger.ExitActions>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+                                    </Grid>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+
+                        <DataGridTemplateColumn Header="Damage" Width="95">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding DamageText}"
+                                               TextAlignment="{Binding NumericTextAlignment}"
+                                               HorizontalAlignment="Stretch"
+                                               VerticalAlignment="Center"/>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+
+                        <DataGridTemplateColumn Header="DPS" Width="85">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding DpsText}"
+                                               TextAlignment="{Binding NumericTextAlignment}"
+                                               HorizontalAlignment="Stretch"
+                                               VerticalAlignment="Center"
+                                               FontWeight="SemiBold"/>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
                     </DataGrid.Columns>
                 </DataGrid>
 

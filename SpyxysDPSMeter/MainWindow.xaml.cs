@@ -195,6 +195,8 @@ namespace SpyxysDPSMeter
             new(StringComparer.OrdinalIgnoreCase);
         private readonly HashSet<string> _manualGroupMembers =
             new(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, TargetEvent> _latestTargets =
+            new(StringComparer.OrdinalIgnoreCase);
 
         private string? _activeFilePath;
         private string _characterName = "Character";
@@ -222,6 +224,11 @@ namespace SpyxysDPSMeter
         private bool _showLastTenExperience = true;
         private bool _showPlatinumPerHour = true;
         private bool _showUnknownEntities = true;
+        private bool _numbersRightAligned;
+        private bool _useThrottledPlatinumRate = true;
+        private bool _alwaysShowGroupMembers = true;
+        private bool _showMainAssistIndicators = true;
+        private string? _mainAssistName;
 
         public MainWindow()
         {
@@ -608,7 +615,12 @@ namespace SpyxysDPSMeter
             Match avoidMatch = AvoidRegex.Match(message);
             if (avoidMatch.Success)
             {
-                HandleAvoidEvent(timestamp);
+                string source = NormalizeEntity(
+                    avoidMatch.Groups["source"].Value);
+                string target = NormalizeEntity(
+                    avoidMatch.Groups["target"].Value);
+
+                HandleAvoidEvent(timestamp, source, target);
             }
         }
 
@@ -635,10 +647,17 @@ namespace SpyxysDPSMeter
 
             _lastCombatActivity = damageEvent.Timestamp;
             _fightDamageEvents.Add(damageEvent);
+            _latestTargets[damageEvent.Source] =
+                new TargetEvent(
+                    damageEvent.Timestamp,
+                    damageEvent.Target);
             PruneOldDamageEvents();
         }
 
-        private void HandleAvoidEvent(DateTime timestamp)
+        private void HandleAvoidEvent(
+            DateTime timestamp,
+            string source,
+            string target)
         {
             if (!_fightActive)
             {
@@ -663,11 +682,19 @@ namespace SpyxysDPSMeter
             }
 
             _lastCombatActivity = timestamp;
+
+            if (!string.IsNullOrWhiteSpace(source) &&
+                !string.IsNullOrWhiteSpace(target))
+            {
+                _latestTargets[source] =
+                    new TargetEvent(timestamp, target);
+            }
         }
 
         private void StartNewFight(DateTime timestamp)
         {
             _fightDamageEvents.Clear();
+            _latestTargets.Clear();
             _fightStart = timestamp;
             _fightEnd = null;
             _lastCombatActivity = timestamp;
@@ -1036,15 +1063,59 @@ namespace SpyxysDPSMeter
                         .Count(),
                     StringComparer.OrdinalIgnoreCase);
 
-            List<DamageRow> newRows = windowEvents
-                .GroupBy(
-                    damage => damage.Source,
-                    StringComparer.OrdinalIgnoreCase)
-                .Where(group => ShouldShowEntity(group.First().Source))
-                .Select(group =>
+            Dictionary<string, List<DamageEvent>> eventsBySource =
+                windowEvents
+                    .GroupBy(
+                        damage => damage.Source,
+                        StringComparer.OrdinalIgnoreCase)
+                    .ToDictionary(
+                        group => group.Key,
+                        group => group.ToList(),
+                        StringComparer.OrdinalIgnoreCase);
+
+            HashSet<string> displaySources =
+                eventsBySource.Keys
+                    .Where(ShouldShowEntity)
+                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            if (_alwaysShowGroupMembers)
+            {
+                // The local character is also part of the group display.
+                // Keeping this row present makes it possible to select
+                // yourself as main assist before you begin attacking.
+                displaySources.Add(_characterName);
+
+                foreach (string member in
+                         _groupMembers.Concat(_manualGroupMembers))
                 {
-                    string source = group.First().Source;
-                    long totalDamage = group.Sum(damage => (long)damage.Amount);
+                    displaySources.Add(member);
+                }
+            }
+
+            string? mainAssistTarget = null;
+            if (_fightActive &&
+                _showMainAssistIndicators &&
+                !string.IsNullOrWhiteSpace(_mainAssistName) &&
+                _latestTargets.TryGetValue(
+                    _mainAssistName,
+                    out TargetEvent? assistTargetEvent))
+            {
+                mainAssistTarget = assistTargetEvent.Target;
+            }
+
+            List<DamageRow> newRows = displaySources
+                .Select(source =>
+                {
+                    List<DamageEvent> sourceEvents =
+                        eventsBySource.TryGetValue(
+                            source,
+                            out List<DamageEvent>? existingEvents)
+                            ? existingEvents
+                            : new List<DamageEvent>();
+
+                    long totalDamage =
+                        sourceEvents.Sum(
+                            damage => (long)damage.Amount);
                     double dps = totalDamage / durationSeconds;
 
                     int markerCount = recentAttackerCounts.TryGetValue(
@@ -1053,21 +1124,73 @@ namespace SpyxysDPSMeter
                         ? count
                         : 0;
 
-                    string displayName = BuildDisplayName(source, markerCount);
-                    (Brush rowBrush, Brush textBrush) = GetRowColors(source);
+                    bool isGroupMember = IsGroupMember(source);
+                    bool isMainAssist =
+                        _showMainAssistIndicators &&
+                        !string.IsNullOrWhiteSpace(_mainAssistName) &&
+                        source.Equals(
+                            _mainAssistName,
+                            StringComparison.OrdinalIgnoreCase);
+
+                    string? currentTarget =
+                        _latestTargets.TryGetValue(
+                            source,
+                            out TargetEvent? targetEvent)
+                            ? targetEvent.Target
+                            : null;
+
+                    bool canShowMismatch =
+                        _fightActive &&
+                        _showMainAssistIndicators &&
+                        !isMainAssist &&
+                        (IsSelf(source) || isGroupMember) &&
+                        !string.IsNullOrWhiteSpace(mainAssistTarget) &&
+                        !string.IsNullOrWhiteSpace(currentTarget);
+
+                    // This intentionally includes every other group member
+                    // when the local character is the selected main assist.
+                    // Their latest target is compared against your target.
+
+                    bool hasAssistMismatch =
+                        canShowMismatch &&
+                        !currentTarget!.Equals(
+                            mainAssistTarget,
+                            StringComparison.OrdinalIgnoreCase);
+
+                    string displayName =
+                        BuildDisplayName(source, markerCount);
+                    (Brush rowBrush, Brush textBrush) =
+                        GetRowColors(source);
 
                     return new DamageRow
                     {
+                        RawEntityName = source,
                         DisplayName = displayName,
-                        DamageText = totalDamage.ToString("N0", CultureInfo.CurrentCulture),
-                        DpsText = dps.ToString("N1", CultureInfo.CurrentCulture),
+                        DamageText = totalDamage.ToString(
+                            "N0",
+                            CultureInfo.CurrentCulture),
+                        DpsText = dps.ToString(
+                            "N1",
+                            CultureInfo.CurrentCulture),
                         RawDamage = totalDamage,
                         RowBrush = rowBrush,
-                        TextBrush = textBrush
+                        TextBrush = textBrush,
+                        NumericTextAlignment =
+                            _numbersRightAligned
+                                ? TextAlignment.Right
+                                : TextAlignment.Left,
+                        IsGroupMember = isGroupMember,
+                        IsMainAssist = isMainAssist,
+                        HasAssistMismatch = hasAssistMismatch,
+                        TargetSubtext = hasAssistMismatch
+                            ? $"targetting {currentTarget}"
+                            : string.Empty
                     };
                 })
                 .OrderByDescending(row => row.RawDamage)
-                .ThenBy(row => row.DisplayName, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(
+                    row => row.DisplayName,
+                    StringComparer.OrdinalIgnoreCase)
                 .ToList();
 
             _rows.Clear();
@@ -1290,8 +1413,6 @@ namespace SpyxysDPSMeter
             DateTime end = GetSessionReferenceTime();
             DateTime oneHourCutoff =
                 end.AddMinutes(-PlatinumHistoryMinutes);
-            DateTime rateWindowCutoff =
-                end.AddMinutes(-PlatinumRateWindowMinutes);
 
             List<CurrencyEvent> retainedEvents = _currencyEvents
                 .Where(entry =>
@@ -1305,8 +1426,37 @@ namespace SpyxysDPSMeter
                 return 0;
             }
 
-            // The first currency event found within the retained one-hour
-            // history establishes when platinum tracking became active.
+            return _useThrottledPlatinumRate
+                ? CalculateThrottledPlatinumPerHour(
+                    end,
+                    retainedEvents)
+                : CalculateNormalPlatinumPerHour(
+                    end,
+                    retainedEvents);
+        }
+
+        private static double CalculateNormalPlatinumPerHour(
+            DateTime end,
+            List<CurrencyEvent> retainedEvents)
+        {
+            DateTime firstCurrencyTime =
+                retainedEvents[0].Timestamp;
+            double elapsedHours = Math.Max(
+                1.0 / 3600.0,
+                (end - firstCurrencyTime).TotalHours);
+
+            long copper = retainedEvents.Sum(
+                entry => entry.CopperValue);
+
+            return (copper / 1000.0) / elapsedHours;
+        }
+
+        private static double CalculateThrottledPlatinumPerHour(
+            DateTime end,
+            List<CurrencyEvent> retainedEvents)
+        {
+            DateTime rateWindowCutoff =
+                end.AddMinutes(-PlatinumRateWindowMinutes);
             DateTime firstTrackedCurrency =
                 retainedEvents[0].Timestamp;
 
@@ -1325,18 +1475,15 @@ namespace SpyxysDPSMeter
                 return 0;
             }
 
-            long recentCopper =
-                recentEvents.Sum(entry => entry.CopperValue);
+            long recentCopper = recentEvents.Sum(
+                entry => entry.CopperValue);
 
-            // Use only the newest three minutes of currency data. If currency
-            // tracking began less than three minutes ago, still divide by a
-            // full three minutes so the displayed rate is not exaggerated.
             double elapsedMinutes = Math.Max(
                 PlatinumRateWindowMinutes,
                 (end - effectiveWindowStart).TotalMinutes);
 
-            double platinum = recentCopper / 1000.0;
-            return platinum / (elapsedMinutes / 60.0);
+            return (recentCopper / 1000.0) /
+                   (elapsedMinutes / 60.0);
         }
 
         private void PruneCurrencyEvents(DateTime referenceTime)
@@ -1374,6 +1521,7 @@ namespace SpyxysDPSMeter
             _petOwners.Clear();
             _knownBadGuys.Clear();
             _groupMembers.Clear();
+            _latestTargets.Clear();
 
             _pendingGroupInviter = null;
             _pendingPartyExperienceTimestamp = null;
@@ -1398,6 +1546,7 @@ namespace SpyxysDPSMeter
             _petOwners.Clear();
             _knownBadGuys.Clear();
             _groupMembers.Clear();
+            _latestTargets.Clear();
 
             _pendingGroupInviter = null;
             _pendingPartyExperienceTimestamp = null;
@@ -1661,10 +1810,137 @@ namespace SpyxysDPSMeter
                 case "UnknownEntities":
                     _showUnknownEntities = isEnabled;
                     break;
+
+                case "AlwaysShowGroupMembers":
+                    _alwaysShowGroupMembers = isEnabled;
+                    break;
+
+                case "MainAssistIndicators":
+                    _showMainAssistIndicators = isEnabled;
+                    break;
             }
 
             SaveSettings();
             RefreshDisplay();
+        }
+
+        private void NumericAlignmentMenuItem_Click(
+            object sender,
+            RoutedEventArgs e)
+        {
+            if (sender is not MenuItem menuItem ||
+                menuItem.Tag is not string alignment)
+            {
+                return;
+            }
+
+            _numbersRightAligned =
+                alignment.Equals(
+                    "Right",
+                    StringComparison.OrdinalIgnoreCase);
+
+            ApplySettingsToMenuItems();
+            SaveSettings();
+            RefreshDisplay();
+        }
+
+        private void PlatinumModeMenuItem_Click(
+            object sender,
+            RoutedEventArgs e)
+        {
+            if (sender is not MenuItem menuItem ||
+                menuItem.Tag is not string mode)
+            {
+                return;
+            }
+
+            _useThrottledPlatinumRate =
+                mode.Equals(
+                    "Throttled",
+                    StringComparison.OrdinalIgnoreCase);
+
+            ApplySettingsToMenuItems();
+            SaveSettings();
+            RefreshDisplay();
+        }
+
+        private void DpsGrid_MouseRightButtonUp(
+            object sender,
+            MouseButtonEventArgs e)
+        {
+            DependencyObject? current =
+                e.OriginalSource as DependencyObject;
+
+            while (current != null &&
+                   current is not DataGridRow)
+            {
+                current = VisualTreeHelper.GetParent(current);
+            }
+
+            if (current is not DataGridRow row ||
+                row.Item is not DamageRow damageRow)
+            {
+                return;
+            }
+
+            MenuItem setMainAssistItem = new()
+            {
+                Header = "Set as Main Assist",
+                CommandParameter = damageRow,
+                IsEnabled =
+                    damageRow.IsGroupMember ||
+                    IsSelf(damageRow.RawEntityName)
+            };
+            setMainAssistItem.Click +=
+                SetMainAssistMenuItem_Click;
+
+            MenuItem clearMainAssistItem = new()
+            {
+                Header = "Clear Main Assist",
+                IsEnabled =
+                    !string.IsNullOrWhiteSpace(_mainAssistName)
+            };
+            clearMainAssistItem.Click +=
+                ClearMainAssistMenuItem_Click;
+
+            ContextMenu menu = new();
+            menu.Items.Add(setMainAssistItem);
+            menu.Items.Add(clearMainAssistItem);
+            menu.PlacementTarget = row;
+            menu.IsOpen = true;
+
+            e.Handled = true;
+        }
+
+        private void SetMainAssistMenuItem_Click(
+            object sender,
+            RoutedEventArgs e)
+        {
+            if (sender is not MenuItem menuItem ||
+                menuItem.CommandParameter is not DamageRow row ||
+                (!row.IsGroupMember &&
+                 !IsSelf(row.RawEntityName)))
+            {
+                SetStatus(
+                    "Only yourself or a detected/manually tagged " +
+                    "group member can be selected as main assist.");
+                return;
+            }
+
+            _mainAssistName = row.RawEntityName;
+            SaveSettings();
+            RefreshDisplay();
+            SetStatus($"{_mainAssistName} is now the main assist.");
+        }
+
+        private void ClearMainAssistMenuItem_Click(
+            object sender,
+            RoutedEventArgs e)
+        {
+            _mainAssistName = null;
+            SaveSettings();
+            RefreshDisplay();
+            SetStatus("Main assist cleared.");
         }
 
         private void PopulateGroupMemberMenus()
@@ -1762,6 +2038,15 @@ namespace SpyxysDPSMeter
             }
 
             _manualGroupMembers.Remove(entity);
+
+            if (!IsGroupMember(entity) &&
+                entity.Equals(
+                    _mainAssistName,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                _mainAssistName = null;
+            }
+
             SaveSettings();
             PopulateGroupMemberMenus();
             RefreshDisplay();
@@ -1796,6 +2081,19 @@ namespace SpyxysDPSMeter
                     settings.ShowPlatinumPerHour;
                 _showUnknownEntities =
                     settings.ShowUnknownEntities;
+                _numbersRightAligned =
+                    settings.RightAlignNumbers;
+                _useThrottledPlatinumRate =
+                    settings.UseThrottledPlatinumRate;
+                _alwaysShowGroupMembers =
+                    settings.AlwaysShowGroupMembers;
+                _showMainAssistIndicators =
+                    settings.ShowMainAssistIndicators;
+                _mainAssistName =
+                    string.IsNullOrWhiteSpace(
+                        settings.MainAssistName)
+                        ? null
+                        : settings.MainAssistName.Trim();
 
                 _manualGroupMembers.Clear();
 
@@ -1828,6 +2126,20 @@ namespace SpyxysDPSMeter
                 _showPlatinumPerHour;
             UnknownEntitiesMenuItem.IsChecked =
                 _showUnknownEntities;
+            AlwaysShowGroupMembersMenuItem.IsChecked =
+                _alwaysShowGroupMembers;
+            MainAssistIndicatorsMenuItem.IsChecked =
+                _showMainAssistIndicators;
+
+            NumberAlignmentLeftMenuItem.IsChecked =
+                !_numbersRightAligned;
+            NumberAlignmentRightMenuItem.IsChecked =
+                _numbersRightAligned;
+
+            PlatinumModeNormalMenuItem.IsChecked =
+                !_useThrottledPlatinumRate;
+            PlatinumModeThrottledMenuItem.IsChecked =
+                _useThrottledPlatinumRate;
         }
 
         private void SaveSettings()
@@ -1846,6 +2158,16 @@ namespace SpyxysDPSMeter
                         _showPlatinumPerHour,
                     ShowUnknownEntities =
                         _showUnknownEntities,
+                    RightAlignNumbers =
+                        _numbersRightAligned,
+                    UseThrottledPlatinumRate =
+                        _useThrottledPlatinumRate,
+                    AlwaysShowGroupMembers =
+                        _alwaysShowGroupMembers,
+                    ShowMainAssistIndicators =
+                        _showMainAssistIndicators,
+                    MainAssistName =
+                        _mainAssistName,
                     ManualGroupMembers = _manualGroupMembers
                         .OrderBy(
                             entity => entity,
@@ -1884,6 +2206,7 @@ namespace SpyxysDPSMeter
             _pendingBarrierTimestamp = null;
             _pendingBarrierWallClock = null;
             _pendingPartyExperienceTimestamp = null;
+            _latestTargets.Clear();
 
             _rows.Clear();
             RefreshDisplay();
@@ -1902,12 +2225,19 @@ namespace SpyxysDPSMeter
 
         public sealed class DamageRow
         {
+            public string RawEntityName { get; set; } = string.Empty;
             public string DisplayName { get; set; } = string.Empty;
             public string DamageText { get; set; } = string.Empty;
             public string DpsText { get; set; } = string.Empty;
+            public string TargetSubtext { get; set; } = string.Empty;
             public long RawDamage { get; set; }
             public Brush RowBrush { get; set; } = FriendlyRowBrush;
             public Brush TextBrush { get; set; } = FriendlyTextBrush;
+            public TextAlignment NumericTextAlignment { get; set; } =
+                TextAlignment.Left;
+            public bool IsGroupMember { get; set; }
+            public bool IsMainAssist { get; set; }
+            public bool HasAssistMismatch { get; set; }
         }
 
         public sealed class MeterSettings
@@ -1918,6 +2248,11 @@ namespace SpyxysDPSMeter
             public bool ShowLastTenExperience { get; set; } = true;
             public bool ShowPlatinumPerHour { get; set; } = true;
             public bool ShowUnknownEntities { get; set; } = true;
+            public bool RightAlignNumbers { get; set; }
+            public bool UseThrottledPlatinumRate { get; set; } = true;
+            public bool AlwaysShowGroupMembers { get; set; } = true;
+            public bool ShowMainAssistIndicators { get; set; } = true;
+            public string? MainAssistName { get; set; }
             public List<string> ManualGroupMembers { get; set; } = new();
         }
 
@@ -1934,6 +2269,10 @@ namespace SpyxysDPSMeter
         private sealed record CurrencyEvent(
             DateTime Timestamp,
             long CopperValue);
+
+        private sealed record TargetEvent(
+            DateTime Timestamp,
+            string Target);
 
         private sealed record CachedLogLine(
             DateTime Timestamp,

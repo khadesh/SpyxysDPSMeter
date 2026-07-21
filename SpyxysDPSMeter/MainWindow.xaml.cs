@@ -1,6 +1,7 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Globalization;
 using System.IO;
 using System.Linq;
@@ -12,6 +13,10 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
+using Drawing = System.Drawing;
+using Forms = System.Windows.Forms;
+using Brush = global::System.Windows.Media.Brush;
+using Color = global::System.Windows.Media.Color;
 
 namespace SpyxysDPSMeter
 {
@@ -183,6 +188,11 @@ namespace SpyxysDPSMeter
         private readonly DispatcherTimer _readTimer;
         private readonly DispatcherTimer _fileScanTimer;
 
+        private Forms.NotifyIcon? _trayIcon;
+        private Forms.ContextMenuStrip? _trayMenu;
+        private Drawing.Icon? _trayIconImage;
+        private bool _exitRequested;
+
         private readonly List<DamageEvent> _fightDamageEvents = new();
         private readonly List<ExperienceEvent> _experienceEvents = new();
         private readonly List<CurrencyEvent> _currencyEvents = new();
@@ -250,6 +260,8 @@ namespace SpyxysDPSMeter
                 Interval = TimeSpan.FromSeconds(15)
             };
             _fileScanTimer.Tick += FileScanTimer_Tick;
+
+            InitializeTrayIcon();
         }
 
         private void Window_Loaded(object sender, RoutedEventArgs e)
@@ -260,16 +272,134 @@ namespace SpyxysDPSMeter
             RefreshDisplay();
         }
 
+        private void Window_Closing(
+            object? sender,
+            CancelEventArgs e)
+        {
+            if (_exitRequested)
+            {
+                return;
+            }
+
+            e.Cancel = true;
+            HideToSystemTray();
+        }
+
         private void Window_Closed(object? sender, EventArgs e)
         {
             _readTimer.Stop();
             _fileScanTimer.Stop();
             SaveSettings();
+            DisposeTrayIcon();
         }
 
         private void FileScanTimer_Tick(object? sender, EventArgs e)
         {
             DetectLatestLogFile();
+        }
+
+        private void InitializeTrayIcon()
+        {
+            _trayMenu = new Forms.ContextMenuStrip();
+
+            Forms.ToolStripMenuItem showItem = new(
+                "Show Spyxy's DPS Meter");
+            showItem.Click += (_, _) =>
+                Dispatcher.Invoke(ShowFromSystemTray);
+
+            Forms.ToolStripMenuItem exitItem = new("Exit");
+            exitItem.Click += (_, _) =>
+                Dispatcher.Invoke(ExitApplication);
+
+            _trayMenu.Items.Add(showItem);
+            _trayMenu.Items.Add(new Forms.ToolStripSeparator());
+            _trayMenu.Items.Add(exitItem);
+
+            _trayIconImage = LoadTrayIcon();
+
+            _trayIcon = new Forms.NotifyIcon
+            {
+                Text = "Spyxy's DPS Meter",
+                Icon = _trayIconImage,
+                ContextMenuStrip = _trayMenu,
+                Visible = true
+            };
+
+            _trayIcon.DoubleClick += (_, _) =>
+                Dispatcher.Invoke(ShowFromSystemTray);
+        }
+
+        private static Drawing.Icon LoadTrayIcon()
+        {
+            try
+            {
+                string? executablePath = Environment.ProcessPath;
+                if (!string.IsNullOrWhiteSpace(executablePath))
+                {
+                    Drawing.Icon? extracted =
+                        Drawing.Icon.ExtractAssociatedIcon(
+                            executablePath);
+
+                    if (extracted != null)
+                    {
+                        return extracted;
+                    }
+                }
+            }
+            catch
+            {
+                // Fall back to the standard Windows application icon.
+            }
+
+            return (Drawing.Icon)
+                Drawing.SystemIcons.Application.Clone();
+        }
+
+        private void HideToSystemTray()
+        {
+            ShowInTaskbar = false;
+            Hide();
+        }
+
+        private void ShowFromSystemTray()
+        {
+            ShowInTaskbar = true;
+
+            if (!IsVisible)
+            {
+                Show();
+            }
+
+            if (WindowState == WindowState.Minimized)
+            {
+                WindowState = WindowState.Normal;
+            }
+
+            Activate();
+            Focus();
+        }
+
+        private void ExitApplication()
+        {
+            _exitRequested = true;
+            Close();
+            System.Windows.Application.Current.Shutdown();
+        }
+
+        private void DisposeTrayIcon()
+        {
+            if (_trayIcon != null)
+            {
+                _trayIcon.Visible = false;
+                _trayIcon.Dispose();
+                _trayIcon = null;
+            }
+
+            _trayMenu?.Dispose();
+            _trayMenu = null;
+
+            _trayIconImage?.Dispose();
+            _trayIconImage = null;
         }
 
         private void ReadTimer_Tick(object? sender, EventArgs e)
@@ -2213,14 +2343,9 @@ namespace SpyxysDPSMeter
             SetStatus("DPS, XP and platinum tracking reset.");
         }
 
-        private void MinimizeButton_Click(object sender, RoutedEventArgs e)
-        {
-            WindowState = WindowState.Minimized;
-        }
-
         private void CloseButton_Click(object sender, RoutedEventArgs e)
         {
-            Close();
+            HideToSystemTray();
         }
 
         public sealed class DamageRow

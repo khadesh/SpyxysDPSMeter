@@ -5,15 +5,22 @@
     <TargetFramework>net7.0-windows</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <UseWPF>true</UseWPF>
 
-    <!-- Icon embedded into the compiled EXE -->
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <UseSystemDrawing>true</UseSystemDrawing>
+
     <ApplicationIcon>Assets\icon-spyxy-dps.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- PNG used by the WPF window/taskbar -->
+    <None Remove="Assets\icon-spyxy-dps.png" />
     <Resource Include="Assets\icon-spyxy-dps.png" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.Drawing.Common"
+                      Version="7.0.0" />
   </ItemGroup>
 
 </Project>

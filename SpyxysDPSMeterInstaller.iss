@@ -1,5 +1,9 @@
 ﻿#define MyAppName "Spyxy's DPS"
+; CI passes the version via ISCC /DMyAppVersion=x.y.z;
+; the value below is only a fallback for manual local builds.
+#ifndef MyAppVersion
 #define MyAppVersion "1.0.4"
+#endif
 #define MyAppPublisher "khadesh"
 #define MyAppURL "https://github.com/khadesh/SpyxysDPSMeter"
 #define MyAppExeName "SpyxysDPSMeter.exe"

@@ -4,11 +4,19 @@ A compact, always-on-top Windows DPS meter and combat-awareness overlay for **Ev
 
 Project page: https://github.com/khadesh/SpyxysDPSMeter
 
-## Installer located in the project root:
+## Download
+
+Grab the latest installer from the
+[Releases page](https://github.com/khadesh/SpyxysDPSMeter/releases/latest):
 
 ```text
 SpyxysDPSMeter-Setup-1.X.Y-win-x64.exe
 ```
+
+Releases are built automatically: bumping the `<Version>` property in
+`SpyxysDPSMeter/SpyxysDPSMeter.csproj` on `master` triggers a GitHub Actions
+workflow that publishes the app, compiles the installer, and creates a
+tagged release.
 
 ## Features
 

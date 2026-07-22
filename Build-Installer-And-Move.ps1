@@ -1,6 +1,8 @@
 ﻿param(
+    # When omitted, the version is read from the <Version> property in
+    # SpyxysDPSMeter.csproj (the single source of truth, also used by CI).
     [ValidatePattern('^\d+\.\d+\.\d+$')]
-    [string]$Version = "1.0.0",
+    [string]$Version = "",
 
     [string]$InnoCompilerPath = ""
 )
@@ -23,6 +25,30 @@ Set-StrictMode -Version Latest
 
 $RepositoryRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $RepositoryRoot
+
+if ([string]::IsNullOrWhiteSpace($Version)) {
+    $CsprojPath = Join-Path `
+        $RepositoryRoot `
+        "SpyxysDPSMeter\SpyxysDPSMeter.csproj"
+
+    [xml]$CsprojXml = Get-Content -Path $CsprojPath
+
+    $Version = ($CsprojXml.Project.PropertyGroup.Version |
+        Where-Object { $_ } |
+        Select-Object -First 1)
+
+    if ([string]::IsNullOrWhiteSpace($Version)) {
+        throw "No <Version> property found in $CsprojPath."
+    }
+
+    $Version = $Version.Trim()
+
+    if ($Version -notmatch '^\d+\.\d+\.\d+$') {
+        throw "Invalid <Version> '$Version' in $CsprojPath."
+    }
+
+    Write-Host "Version read from csproj: $Version" -ForegroundColor Cyan
+}
 
 Write-Host ""
 Write-Host "Building Spyxy's DPS Meter v$Version" -ForegroundColor Cyan

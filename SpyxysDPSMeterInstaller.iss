@@ -1,5 +1,5 @@
 ﻿#define MyAppName "Spyxy's DPS"
-#define MyAppVersion "1.0.4"
+#define MyAppVersion "1.0.5"
 #define MyAppPublisher "khadesh"
 #define MyAppURL "https://github.com/khadesh/SpyxysDPSMeter"
 #define MyAppExeName "SpyxysDPSMeter.exe"
@@ -67,6 +67,7 @@ Filename: "{app}\{#MyAppExeName}"; \
     Description: "Launch {#MyAppName}"; \
     WorkingDir: "{app}"; \
     Flags: nowait postinstall skipifsilent
+
 
 
 

@@ -70,7 +70,7 @@ private const bool IsDebugMode = false;
 
 When `true`, the meter loads a one-time combat snapshot from the newest log rather than starting live timers. Combat uses up to the newest 10,000 physical log lines and rebases them into a recent synthetic fight.
 
-Instant Messenger has its own debug replay:
+Catch Tell Window has its own debug replay:
 
 - scans the selected log sequentially;
 - retains the newest 10,000 recognized chat messages;
@@ -78,17 +78,17 @@ Instant Messenger has its own debug replay:
 - suppresses startup alert sounds;
 - does not write debug replay messages into the local chat-history files.
 
-### Instant Messenger
+### Catch Tell Window
 
-Instant Messenger is enabled by default and can be changed from:
+Catch Tell Window is enabled by default and can be changed from:
 
 ```text
-Gear menu → Instant Messenger
+Gear menu → Catch Tell Window
 ```
 
-The main title bar contains one chat-bubble button. Clicking it opens or restores a separate always-on-top messenger window. A numeric badge over the icon displays the total unread count.
+The main title bar contains one chat-bubble button. Clicking it opens or restores a separate always-on-top Catch Tell Window. A numeric badge over the icon displays the total number of messages still pending review.
 
-The messenger reads recognized chat lines from the active EverQuest character log while normal combat parsing continues. Recognized messages from the monitored character's pet are ignored.
+The window reads recognized chat lines from the active EverQuest character log while normal combat parsing continues. Recognized messages from the monitored character's pet are ignored.
 
 Dynamic tabs are created for:
 
@@ -106,25 +106,29 @@ Dynamic tabs are created for:
 - Fellowship;
 - any other recognized custom channel.
 
-Each channel uses a distinct bubble color. The **All** tab combines every channel that is not ignored.
+Each channel uses a distinct bubble color. The **All** tab combines every channel that is not currently ignored.
 
 Every discovered channel has four saved options:
 
 | Option | Behavior |
 |---|---|
-| **Auto mark as read** | New non-important messages do not increase unread counts. Enabled by default for General, New Players, and Say. |
+| **Auto mark as read** | New non-important messages do not increase pending-review counts. Enabled by default for General, New Players, and Say. |
 | **Auto mark as important** | Every new incoming message in the channel is important. Enabled by default for Guild, Group, and Tells. |
 | **Mark my name as important** | A message containing the monitored character's name is important. Enabled by default. |
-| **Ignore all** | Disregards the channel, excludes it from **All**, and removes it from unread/important totals while enabled. |
+| **Ignore all** | Hides the channel from alerts, pending totals, its visible message view, and **All**. Messages continue to be collected and saved silently so they appear when the channel is enabled again. |
 
-Important unread messages:
+Pending and important messages:
 
-- play the Windows exclamation sound when received live;
+- play the Windows exclamation sound when an important message is received live;
 - display a blinking red `!` on the affected channel tab and the **All** tab;
-- remain unread while the messenger window is inactive;
-- are cleared after the active tab is scrolled to the bottom.
+- display a numeric pending-review count on the source tab and **All**;
+- remain pending while the Catch Tell Window is hidden, inactive, or displaying **All**;
+- clear when the user opens the source channel tab;
+- can all be cleared explicitly with **Mark all as read** at the top of the **All** tab.
 
-Closing the messenger window hides it rather than shutting down collection. Turning off **Instant Messenger** stops new chat collection and hides the window without deleting history.
+Selecting or scrolling the **All** tab never clears source-channel messages automatically.
+
+Closing the Catch Tell Window hides it rather than shutting down collection. Turning off **Catch Tell Window** stops new chat collection and hides the window without deleting retained history.
 
 Chat history is stored locally as JSON Lines:
 
@@ -132,7 +136,9 @@ Chat history is stored locally as JSON Lines:
 <application folder>\ChatLogs\Character_Server.chat.jsonl
 ```
 
-Each record includes the channel, timestamp, sender, optional recipient, message text, and whether it was outgoing. A separate file is used for every character/server pair. Saved history loads automatically when that character becomes active and is marked read. Unread and important state are session-only and are not persisted.
+Each record includes the channel, timestamp, sender, optional recipient, message text, and whether it was outgoing. A separate file is used for every character/server pair.
+
+History retention is limited to seven days. Entries older than one week are removed automatically during loading and periodic background cleanup. Retained history loads as read when that character becomes active. Pending and important state are session-only and are not persisted.
 
 ### Damage and DPS
 
@@ -357,7 +363,7 @@ The gear menu can toggle:
 - always-visible group members;
 - main-assist indicators;
 - spell-casting subtext;
-- Instant Messenger;
+- Catch Tell Window;
 - active-log refresh rate.
 
 Damage and DPS numbers can be aligned left or right.
@@ -370,7 +376,7 @@ Open the gear menu and choose:
 Help → Feature Guide...
 ```
 
-The scrollable in-app feature guide explains log monitoring, debug snapshots, Instant Messenger, channel defaults, unread and important behavior, local chat history, refresh-rate line caps, all three data-filtering modes, damage and spell indicators, teleportation, casting subtext, entity classification, hostile detection, group tools, main assist, healing, crowd control, XP, platinum, display settings, system-tray behavior, reset behavior, settings, and troubleshooting.
+The scrollable in-app feature guide explains log monitoring, debug snapshots, Catch Tell Window, channel defaults, unread and important behavior, local chat history, refresh-rate line caps, all three data-filtering modes, damage and spell indicators, teleportation, casting subtext, entity classification, hostile detection, group tools, main assist, healing, crowd control, XP, platinum, display settings, system-tray behavior, reset behavior, settings, and troubleshooting.
 
 The same **Help** submenu also provides **Open GitHub Project**.
 
@@ -383,7 +389,7 @@ The same **Help** submenu also provides **Open GitHub Project**.
 - While hidden, the active-log refresh interval temporarily changes to `5.0s` to reduce background activity.
 - Restoring the window immediately reapplies the refresh rate selected in the gear menu.
 - Launching a second copy restores the existing main window and immediately closes the new process before it reads any logs.
-- The Instant Messenger is a separate always-on-top window and can remain visible while the main meter is hidden.
+- The Catch Tell Window is a separate always-on-top window and can remain visible while the main meter is hidden.
 
 ### Reset button
 
@@ -397,7 +403,7 @@ The reset button clears current:
 - current Only knowns encounter scope;
 - temporary healing, teleportation, damage-spell, spell-casting subtext, and CC indicators.
 
-It does not erase saved application settings or Instant Messenger history, tabs, unread state, or channel preferences.
+It does not erase saved application settings or Catch Tell Window history, tabs, pending-review state, or channel preferences.
 
 ### GitHub shortcut
 
@@ -432,7 +438,7 @@ Settings are serialized as JSON to:
 <application folder>\settings.json
 ```
 
-The settings file includes display preferences, the selected data-filtering mode, Instant Messenger availability and per-channel options, platinum mode, manual group members, main assist, the spell-casting subtext toggle, the active-log refresh rate, the selected log directory, and the saved main-window position and size.
+The settings file includes display preferences, the selected data-filtering mode, Catch Tell Window availability and per-channel options, platinum mode, manual group members, main assist, the spell-casting subtext toggle, the active-log refresh rate, the selected log directory, and the saved main-window position and size.
 
 Example log-directory setting:
 

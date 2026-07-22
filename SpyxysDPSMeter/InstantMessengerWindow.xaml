@@ -240,7 +240,7 @@
                             <TextBlock Foreground="#FFF3F5F7"
                                        FontSize="12"
                                        FontWeight="SemiBold"
-                                       Text="Spyxy's  Catch Tell Window"/>
+                                       Text="Spyxy's Catch Tell Window"/>
                             <TextBlock x:Name="IdentityText"
                                        Margin="0,1,0,0"
                                        Foreground="#FFAEB7C1"
@@ -256,7 +256,7 @@
                                        HorizontalAlignment="Right"
                                        Foreground="#FFBFC7D0"
                                        FontSize="10"
-                                       Text="No unread messages"/>
+                                       Text="No pending messages"/>
                             <TextBlock Margin="0,1,0,0"
                                        HorizontalAlignment="Right"
                                        Foreground="#FF7F8A96"

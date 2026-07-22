@@ -19,7 +19,7 @@ namespace SpyxysDPSMeter
 {
     public partial class MainWindow : Window
     {
-        private const bool IsDebugMode = true;
+        private const bool IsDebugMode = false;
 
         private const int DebugMaximumLogLines = 10000;
         private const int DebugMaximumChatMessages = 10000;
@@ -759,13 +759,14 @@ Catch Tell Window
 • Auto mark as read defaults on for General, New Players, and Say.
 • Auto mark as important defaults on for Guild, Group, and Tells.
 • Mark my name as important defaults on for discovered channels.
-• Ignore all removes the channel from unread totals and the All tab and disregards future messages while enabled.
+• Ignore all hides the channel from alerts, pending totals, its visible message view, and the All tab, but messages continue to be collected and saved silently so they appear if the channel is enabled again.
 • Important unread messages play the Windows exclamation sound.
 • Any tab containing important unread messages displays a blinking red !.
-• Important messages remain unread while the messenger is inactive. Scrolling an active tab to the bottom marks that tab as read.
+• Every tab shows the number of pending messages awaiting review until that channel is opened or all messages are explicitly marked read.
+• The All tab never clears messages merely because it is selected or scrolled. Pending messages clear only when their source channel tab is opened, or when Mark all as read is clicked on the All tab.
 • Closing the messenger hides it; chat collection continues while the feature remains enabled.
 • Chat history is stored as JSON Lines under ChatLogs beside the application, using one character_server.chat.jsonl file per character and server.
-• Saved history loads automatically on startup and is marked read. Read and important state are intentionally session-only.
+• Saved history is retained for a maximum of seven days. Expired entries are removed automatically, and retained history loads as read on startup. Read and important state are intentionally session-only.
 • Disabling Catch Tell Window stops new chat collection and hides the window without deleting saved history.
 
 DAMAGE AND DPS

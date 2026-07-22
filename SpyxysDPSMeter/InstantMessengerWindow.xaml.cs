@@ -32,6 +32,8 @@ namespace SpyxysDPSMeter
     {
         private const string AllChannelName = "All";
         private const string SayChannelName = "Say";
+        private const int HistoryRetentionDays = 7;
+        private const int HistoryPruneIntervalHours = 1;
 
         private static readonly JsonSerializerOptions JsonOptions = new()
         {
@@ -52,6 +54,8 @@ namespace SpyxysDPSMeter
         private bool _blinkVisible = true;
         private bool _isApplyingPreferenceControls;
         private bool _hasLoaded;
+        private DateTime _nextHistoryPruneUtc =
+            DateTime.MinValue;
 
         public InstantMessengerWindow(
             Dictionary<string, InstantMessengerChannelPreference>
@@ -278,6 +282,17 @@ namespace SpyxysDPSMeter
             object sender,
             EventArgs e)
         {
+            if (ChannelTabs.SelectedItem is TabItem selectedTab &&
+                selectedTab.Tag is string selectedChannel &&
+                !selectedChannel.Equals(
+                    AllChannelName,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                MarkChannelRead(
+                    selectedChannel);
+                return;
+            }
+
             RefreshUnreadState();
         }
 
@@ -292,6 +307,27 @@ namespace SpyxysDPSMeter
             object sender,
             SelectionChangedEventArgs e)
         {
+            if (_hasLoaded &&
+                IsActive &&
+                ChannelTabs.SelectedItem is TabItem selectedTab &&
+                selectedTab.Tag is string selectedChannel &&
+                !selectedChannel.Equals(
+                    AllChannelName,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                if (_channelViews.TryGetValue(
+                        selectedChannel,
+                        out ChannelView? selectedView))
+                {
+                    selectedView.ScrollViewer
+                        .ScrollToEnd();
+                }
+
+                MarkChannelRead(
+                    selectedChannel);
+                return;
+            }
+
             RefreshUnreadState();
         }
 
@@ -299,6 +335,8 @@ namespace SpyxysDPSMeter
             object? sender,
             EventArgs e)
         {
+            PruneExpiredMessagesAndHistoryIfDue();
+
             _blinkVisible =
                 !_blinkVisible;
 
@@ -325,13 +363,17 @@ namespace SpyxysDPSMeter
             if (!IsActive ||
                 sender is not ScrollViewer scrollViewer ||
                 scrollViewer.Tag is not string channelName ||
+                channelName.Equals(
+                    AllChannelName,
+                    StringComparison.OrdinalIgnoreCase) ||
                 e.VerticalChange == 0 ||
                 !IsAtBottom(scrollViewer))
             {
                 return;
             }
 
-            MarkChannelRead(channelName);
+            MarkChannelRead(
+                channelName);
         }
 
         private void AddMessageCore(
@@ -364,12 +406,8 @@ namespace SpyxysDPSMeter
                 EnsureChannelView(channel);
             InstantMessengerChannelPreference preference =
                 GetPreference(channel);
-
-            if (preference.IgnoreAll)
-            {
-                RefreshUnreadState();
-                return;
-            }
+            bool isIgnored =
+                preference.IgnoreAll;
 
             bool containsCharacterName =
                 !string.IsNullOrWhiteSpace(
@@ -391,7 +429,15 @@ namespace SpyxysDPSMeter
 
             bool isRead;
 
-            if (isDebugReplay)
+            if (isIgnored)
+            {
+                // Ignored channels are hidden and silent, but their messages
+                // are retained so they can be reviewed if the channel is
+                // enabled again.
+                isRead = true;
+                shouldBeImportant = false;
+            }
+            else if (isDebugReplay)
             {
                 isRead =
                     !shouldBeImportant;
@@ -429,9 +475,14 @@ namespace SpyxysDPSMeter
                 AppendPersistedMessage(message);
             }
 
-            RenderMessageState(state);
+            if (!isIgnored)
+            {
+                RenderMessageState(
+                    state);
+            }
 
-            if (IsChannelCurrentlySelected(channel) &&
+            if (!isIgnored &&
+                IsChannelCurrentlySelected(channel) &&
                 IsActive)
             {
                 channelView.ScrollViewer
@@ -439,6 +490,7 @@ namespace SpyxysDPSMeter
             }
 
             bool firedImportantAlert =
+                !isIgnored &&
                 shouldBeImportant &&
                 !message.IsOutgoing &&
                 !suppressSound;
@@ -471,14 +523,24 @@ namespace SpyxysDPSMeter
                 !File.Exists(
                     _historyFilePath))
             {
+                _nextHistoryPruneUtc =
+                    DateTime.UtcNow.AddHours(
+                        HistoryPruneIntervalHours);
                 RefreshUnreadState();
                 SetStatus(
                     "No saved chat history exists yet for this character.");
                 return;
             }
 
+            DateTime retentionCutoff =
+                DateTime.Now.AddDays(
+                    -HistoryRetentionDays);
+
             int loadedCount = 0;
+            int expiredCount = 0;
             int failedCount = 0;
+            List<InstantMessageRecord> retainedMessages =
+                new();
 
             try
             {
@@ -508,9 +570,19 @@ namespace SpyxysDPSMeter
                             continue;
                         }
 
+                        if (message.Timestamp <
+                            retentionCutoff)
+                        {
+                            expiredCount++;
+                            continue;
+                        }
+
                         message.Channel =
                             NormalizeChannelName(
                                 message.Channel);
+
+                        retainedMessages.Add(
+                            message);
 
                         EnsureChannelView(
                             message.Channel);
@@ -528,7 +600,8 @@ namespace SpyxysDPSMeter
                                 message.Channel)
                             .IgnoreAll)
                         {
-                            RenderMessageState(state);
+                            RenderMessageState(
+                                state);
                         }
 
                         loadedCount++;
@@ -538,6 +611,17 @@ namespace SpyxysDPSMeter
                         failedCount++;
                     }
                 }
+
+                if (expiredCount > 0 ||
+                    failedCount > 0)
+                {
+                    RewritePersistedHistory(
+                        retainedMessages);
+                }
+
+                _nextHistoryPruneUtc =
+                    DateTime.UtcNow.AddHours(
+                        HistoryPruneIntervalHours);
             }
             catch (Exception ex)
             {
@@ -549,13 +633,27 @@ namespace SpyxysDPSMeter
 
             RefreshUnreadState();
 
-            string failureText =
-                failedCount > 0
-                    ? $" ({failedCount:N0} invalid lines skipped)"
+            List<string> cleanupParts = new();
+
+            if (expiredCount > 0)
+            {
+                cleanupParts.Add(
+                    $"{expiredCount:N0} older than one week removed");
+            }
+
+            if (failedCount > 0)
+            {
+                cleanupParts.Add(
+                    $"{failedCount:N0} invalid lines removed");
+            }
+
+            string cleanupText =
+                cleanupParts.Count > 0
+                    ? $" ({string.Join("; ", cleanupParts)})"
                     : string.Empty;
 
             SetStatus(
-                $"Loaded {loadedCount:N0} saved messages as read{failureText}.");
+                $"Loaded {loadedCount:N0} saved messages as read{cleanupText}.");
 
             if (_hasLoaded)
             {
@@ -582,6 +680,8 @@ namespace SpyxysDPSMeter
             {
                 return;
             }
+
+            PruneExpiredMessagesAndHistoryIfDue();
 
             try
             {
@@ -612,6 +712,149 @@ namespace SpyxysDPSMeter
                     $"Unable to save chat history: {ex.Message}");
             }
         }
+
+        private void PruneExpiredMessagesAndHistoryIfDue()
+        {
+            if (DateTime.UtcNow <
+                _nextHistoryPruneUtc)
+            {
+                return;
+            }
+
+            _nextHistoryPruneUtc =
+                DateTime.UtcNow.AddHours(
+                    HistoryPruneIntervalHours);
+
+            DateTime retentionCutoff =
+                DateTime.Now.AddDays(
+                    -HistoryRetentionDays);
+
+            int removedFromMemory =
+                _messages.RemoveAll(
+                    state =>
+                        state.Record.Timestamp <
+                        retentionCutoff);
+
+            if (removedFromMemory > 0)
+            {
+                RebuildRenderedMessages();
+                RefreshUnreadState();
+            }
+
+            if (string.IsNullOrWhiteSpace(
+                    _historyFilePath) ||
+                !File.Exists(
+                    _historyFilePath))
+            {
+                return;
+            }
+
+            List<InstantMessageRecord> retainedMessages =
+                new();
+            bool rewriteRequired = false;
+
+            try
+            {
+                foreach (string line in
+                         File.ReadLines(
+                             _historyFilePath))
+                {
+                    if (string.IsNullOrWhiteSpace(
+                            line))
+                    {
+                        rewriteRequired = true;
+                        continue;
+                    }
+
+                    try
+                    {
+                        InstantMessageRecord? record =
+                            JsonSerializer.Deserialize<
+                                InstantMessageRecord>(
+                                line,
+                                JsonOptions);
+
+                        if (record == null ||
+                            record.Timestamp <
+                            retentionCutoff)
+                        {
+                            rewriteRequired = true;
+                            continue;
+                        }
+
+                        retainedMessages.Add(
+                            record);
+                    }
+                    catch
+                    {
+                        rewriteRequired = true;
+                    }
+                }
+
+                if (rewriteRequired)
+                {
+                    RewritePersistedHistory(
+                        retainedMessages);
+                }
+            }
+            catch (Exception ex)
+            {
+                SetStatus(
+                    $"Unable to prune chat history: {ex.Message}");
+            }
+        }
+
+        private void RewritePersistedHistory(
+            IEnumerable<InstantMessageRecord> messages)
+        {
+            if (string.IsNullOrWhiteSpace(
+                    _historyFilePath))
+            {
+                return;
+            }
+
+            string? directory =
+                Path.GetDirectoryName(
+                    _historyFilePath);
+
+            if (!string.IsNullOrWhiteSpace(
+                    directory))
+            {
+                Directory.CreateDirectory(
+                    directory);
+            }
+
+            string temporaryPath =
+                _historyFilePath +
+                ".tmp";
+
+            try
+            {
+                File.WriteAllLines(
+                    temporaryPath,
+                    (messages ??
+                     Enumerable.Empty<InstantMessageRecord>())
+                    .Select(message =>
+                        JsonSerializer.Serialize(
+                            message,
+                            JsonOptions)));
+
+                File.Move(
+                    temporaryPath,
+                    _historyFilePath,
+                    overwrite: true);
+            }
+            finally
+            {
+                if (File.Exists(
+                        temporaryPath))
+                {
+                    File.Delete(
+                        temporaryPath);
+                }
+            }
+        }
+
 
         private ChannelView EnsureAllView()
         {
@@ -704,16 +947,23 @@ namespace SpyxysDPSMeter
 
             DockPanel content = new();
 
-            if (showOptions)
+            FrameworkElement? channelControls =
+                showOptions
+                    ? CreateChannelOptions(
+                        channelName)
+                    : channelName.Equals(
+                        AllChannelName,
+                        StringComparison.OrdinalIgnoreCase)
+                        ? CreateAllChannelControls()
+                        : null;
+
+            if (channelControls != null)
             {
-                FrameworkElement options =
-                    CreateChannelOptions(
-                        channelName);
                 DockPanel.SetDock(
-                    options,
+                    channelControls,
                     Dock.Top);
                 content.Children.Add(
-                    options);
+                    channelControls);
             }
 
             content.Children.Add(
@@ -830,6 +1080,114 @@ namespace SpyxysDPSMeter
             };
         }
 
+        private FrameworkElement CreateAllChannelControls()
+        {
+            CheckBox markAllRead =
+                CreateOptionCheckBox(
+                    "Mark all as read",
+                    isChecked: false,
+                    "Clears every pending review indicator across all visible channels.");
+
+            markAllRead.Checked +=
+                (_, _) =>
+                {
+                    if (_isApplyingPreferenceControls)
+                    {
+                        return;
+                    }
+
+                    MarkAllChannelsRead();
+
+                    _isApplyingPreferenceControls = true;
+
+                    try
+                    {
+                        markAllRead.IsChecked =
+                            false;
+                    }
+                    finally
+                    {
+                        _isApplyingPreferenceControls = false;
+                    }
+                };
+
+            TextBlock heading = new()
+            {
+                Text =
+                    "All-channel review",
+                Foreground =
+                    new SolidColorBrush(
+                        Color.FromRgb(
+                            238,
+                            242,
+                            246)),
+                FontSize = 11,
+                FontWeight =
+                    FontWeights.SemiBold
+            };
+
+            TextBlock description = new()
+            {
+                Text =
+                    "Messages stay pending here until their source tab is opened or Mark all as read is clicked.",
+                Margin =
+                    new Thickness(
+                        0,
+                        2,
+                        0,
+                        0),
+                Foreground =
+                    new SolidColorBrush(
+                        Color.FromRgb(
+                            151,
+                            161,
+                            172)),
+                FontSize = 9,
+                TextWrapping =
+                    TextWrapping.Wrap
+            };
+
+            StackPanel content = new()
+            {
+                Margin =
+                    new Thickness(
+                        10,
+                        7,
+                        10,
+                        7)
+            };
+            content.Children.Add(
+                heading);
+            content.Children.Add(
+                description);
+            content.Children.Add(
+                markAllRead);
+
+            return new Border
+            {
+                Background =
+                    new SolidColorBrush(
+                        Color.FromRgb(
+                            32,
+                            37,
+                            43)),
+                BorderBrush =
+                    new SolidColorBrush(
+                        Color.FromRgb(
+                            67,
+                            75,
+                            85)),
+                BorderThickness =
+                    new Thickness(
+                        0,
+                        0,
+                        0,
+                        1),
+                Child = content
+            };
+        }
+
+
         private FrameworkElement CreateChannelOptions(
             string channelName)
         {
@@ -854,7 +1212,7 @@ namespace SpyxysDPSMeter
             CheckBox ignoreAll = CreateOptionCheckBox(
                 "Ignore all",
                 preference.IgnoreAll,
-                "Disregard this channel and exclude it from the All tab.");
+                "Hide this channel's messages from alerts, pending totals, and All while continuing to retain them.");
 
             autoRead.Checked +=
                 (_, _) =>
@@ -1411,16 +1769,18 @@ namespace SpyxysDPSMeter
         private void MarkChannelRead(
             string channelName)
         {
-            bool markAll =
-                channelName.Equals(
+            if (channelName.Equals(
                     AllChannelName,
-                    StringComparison.OrdinalIgnoreCase);
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                RefreshUnreadState();
+                return;
+            }
 
             foreach (ChatMessageState state in
                      _messages)
             {
-                if (!markAll &&
-                    !state.Record.Channel.Equals(
+                if (!state.Record.Channel.Equals(
                         channelName,
                         StringComparison.OrdinalIgnoreCase))
                 {
@@ -1446,6 +1806,34 @@ namespace SpyxysDPSMeter
 
             RefreshUnreadState();
         }
+
+        private void MarkAllChannelsRead()
+        {
+            foreach (ChatMessageState state in
+                     _messages)
+            {
+                if (GetPreference(
+                        state.Record.Channel)
+                    .IgnoreAll)
+                {
+                    continue;
+                }
+
+                if (!state.IsRead ||
+                    state.IsImportant)
+                {
+                    state.IsRead = true;
+                    state.IsImportant = false;
+                    RefreshMessageVisuals(
+                        state);
+                }
+            }
+
+            RefreshUnreadState();
+            SetStatus(
+                "All visible channel messages were marked as read.");
+        }
+
 
         private void RefreshUnreadState()
         {
@@ -1516,10 +1904,10 @@ namespace SpyxysDPSMeter
 
             SummaryText.Text =
                 unreadCount <= 0
-                    ? "No unread messages"
+                    ? "No pending messages"
                     : hasImportant
-                        ? $"{unreadCount:N0} unread — important messages waiting"
-                        : $"{unreadCount:N0} unread messages";
+                        ? $"{unreadCount:N0} pending — important review waiting"
+                        : $"{unreadCount:N0} pending messages";
 
             UnreadStateChanged?.Invoke(
                 unreadCount,
@@ -1538,11 +1926,8 @@ namespace SpyxysDPSMeter
             }
 
             return selectedChannel.Equals(
-                       AllChannelName,
-                       StringComparison.OrdinalIgnoreCase) ||
-                   selectedChannel.Equals(
-                       channelName,
-                       StringComparison.OrdinalIgnoreCase);
+                channelName,
+                StringComparison.OrdinalIgnoreCase);
         }
 
         private static bool IsAtBottom(

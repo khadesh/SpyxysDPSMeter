@@ -19,7 +19,7 @@ namespace SpyxysDPSMeter
 {
     public partial class MainWindow : Window
     {
-        private const bool IsDebugMode = false;
+        private const bool IsDebugMode = true;
 
         private const int DebugMaximumLogLines = 10000;
         private const int DebugMaximumChatMessages = 10000;
@@ -708,7 +708,7 @@ DEBUG SNAPSHOT MODE
 • true finds the newest available log and reads up to its last 10,000 lines once at startup.
 • All parseable lines in that 10,000-line tail are compressed into a recent synthetic timeline of at most 25 seconds.
 • Login resets and kill barriers are suppressed during the snapshot load so the parsed tail behaves like one active fight that just happened.
-• Instant Messenger scans the complete selected log and retains the newest 10,000 recognized chat messages for review.
+• Catch Tell Window scans the complete selected log and retains the newest 10,000 recognized chat messages for review.
 • Debug chat is not written to local chat history. Every debug chat message except Say is marked important without playing 10,000 startup sounds.
 • Live reading and the recurring newer-log scan are not started in debug mode.
 • The title and status line display DEBUG SNAPSHOT so a test build is easy to recognize.
@@ -744,8 +744,8 @@ DATA FILTERING
 • Switching to Only knowns during a fight rebuilds the scope from direct interactions already recorded in the current encounter.
 • Older settings migrate automatically: Unknown Entities enabled becomes All data; disabled becomes Remove unknowns.
 
-INSTANT MESSENGER
-• Gear menu → Instant Messenger turns the feature on or off. It is enabled by default.
+Catch Tell Window
+• Gear menu → Catch Tell Window turns the feature on or off. It is enabled by default.
 • The single chat-bubble button in the main title bar opens or restores a separate always-on-top messenger window.
 • The badge over the chat button shows the total unread message count.
 • Chat is parsed from the active character log without interrupting combat parsing. Recognized pet tells are ignored.
@@ -766,7 +766,7 @@ INSTANT MESSENGER
 • Closing the messenger hides it; chat collection continues while the feature remains enabled.
 • Chat history is stored as JSON Lines under ChatLogs beside the application, using one character_server.chat.jsonl file per character and server.
 • Saved history loads automatically on startup and is marked read. Read and important state are intentionally session-only.
-• Disabling Instant Messenger stops new chat collection and hides the window without deleting saved history.
+• Disabling Catch Tell Window stops new chat collection and hides the window without deleting saved history.
 
 DAMAGE AND DPS
 • Damage is grouped by attacker.
@@ -866,7 +866,7 @@ PLATINUM
 • Currency history is retained for up to one hour.
 
 DISPLAY OPTIONS
-• The gear menu can toggle player name, server name, XP/h, Last 10 XP/h, Platinum/h, always-visible group members, main-assist indicators, spell-casting subtext, and Instant Messenger.
+• The gear menu can toggle player name, server name, XP/h, Last 10 XP/h, Platinum/h, always-visible group members, main-assist indicators, spell-casting subtext, and Catch Tell Window.
 • Data Filtering replaces the former Unknown Entities toggle.
 • Damage and DPS values can be aligned left or right.
 • Window position and size are saved automatically.
@@ -880,7 +880,7 @@ SYSTEM TRAY AND SINGLE INSTANCE
 
 RESET
 • The reset button clears current damage, DPS, encounter scope, XP, platinum, target history, healing indicators, teleport indicators, damage-spell indicators, casting subtext, and crowd-control indicators.
-• Reset does not erase saved application settings or Instant Messenger history, tabs, unread state, or channel preferences.
+• Reset does not erase saved application settings or Catch Tell Window history, tabs, unread state, or channel preferences.
 
 SETTINGS AND TROUBLESHOOTING
 • Settings are stored in settings.json beside the executable.
@@ -1677,7 +1677,7 @@ PROJECT
             if (!_instantMessengerEnabled)
             {
                 SetStatus(
-                    "Instant Messenger is disabled in the gear menu.");
+                    "Catch Tell Window is disabled in the gear menu.");
                 return;
             }
 
@@ -1703,7 +1703,7 @@ PROJECT
                 InitializeInstantMessengerForCurrentCharacter();
                 _instantMessengerWindow?.PublishUnreadState();
                 SetStatus(
-                    "Instant Messenger enabled.");
+                    "Catch Tell Window enabled.");
             }
             else
             {
@@ -1711,7 +1711,7 @@ PROJECT
                 InstantMessengerUnreadBadge.Visibility =
                     Visibility.Collapsed;
                 SetStatus(
-                    "Instant Messenger disabled. New chat lines will be ignored.");
+                    "Catch Tell Window disabled. New chat lines will be ignored.");
             }
 
             UpdateInstantMessengerButtonState();
@@ -1728,8 +1728,8 @@ PROJECT
                     : 0.35;
             InstantMessengerButton.ToolTip =
                 _instantMessengerEnabled
-                    ? "Open Instant Messenger"
-                    : "Instant Messenger is disabled in settings";
+                    ? "Open Catch Tell Window"
+                    : "Catch Tell Window is disabled in settings";
 
             if (!_instantMessengerEnabled)
             {

@@ -65,7 +65,7 @@
                                     FontFamily="Segoe UI Emoji"
                                     FontSize="15"
                                     Cursor="Hand"
-                                    ToolTip="Open Instant Messenger"/>
+                                    ToolTip="Open Catch Tell Window"/>
 
                             <Border x:Name="InstantMessengerUnreadBadge"
                                     HorizontalAlignment="Right"
@@ -214,7 +214,7 @@
                                               StaysOpenOnClick="True"
                                               Click="DisplaySettingMenuItem_Click"/>
                                     <MenuItem x:Name="InstantMessengerMenuItem"
-                                              Header="Instant Messenger"
+                                              Header="Catch Tell Window"
                                               IsCheckable="True"
                                               IsChecked="True"
                                               StaysOpenOnClick="True"

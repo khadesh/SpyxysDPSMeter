@@ -1,7 +1,7 @@
 <Window x:Class="SpyxysDPSMeter.InstantMessengerWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Spyxy's Instant Messenger"
+        Title="Spyxy's Catch Tell Window"
         Width="760"
         Height="560"
         MinWidth="520"
@@ -240,7 +240,7 @@
                             <TextBlock Foreground="#FFF3F5F7"
                                        FontSize="12"
                                        FontWeight="SemiBold"
-                                       Text="Spyxy's Instant Messenger"/>
+                                       Text="Spyxy's  Catch Tell Window"/>
                             <TextBlock x:Name="IdentityText"
                                        Margin="0,1,0,0"
                                        Foreground="#FFAEB7C1"
@@ -272,7 +272,7 @@
                                 BorderThickness="0"
                                 FontSize="18"
                                 Cursor="Hand"
-                                ToolTip="Hide Instant Messenger"/>
+                                ToolTip="Hide Catch Tell Window"/>
                     </Grid>
                 </Border>
 

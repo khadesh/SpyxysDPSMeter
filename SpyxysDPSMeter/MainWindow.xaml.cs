@@ -19,7 +19,7 @@ namespace SpyxysDPSMeter
 {
     public partial class MainWindow : Window
     {
-        private const bool IsDebugMode = true;
+        private const bool IsDebugMode = false;
 
         private const int DebugMaximumLogLines = 10000;
         private const int DebugMaximumChatMessages = 10000;

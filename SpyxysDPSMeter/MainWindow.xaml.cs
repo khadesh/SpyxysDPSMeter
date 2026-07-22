@@ -648,6 +648,159 @@ namespace SpyxysDPSMeter
                 "Color Shock"
             };
 
+        private const string FeatureHelpText = """
+Spyxy's DPS Meter — Feature Guide
+
+GETTING STARTED
+• Enable EverQuest logging with /log on.
+• Start the meter. It automatically searches the configured log directory for the newest eqlog_CHARACTER_SERVER.txt file.
+• Change the folder through Gear menu → Log Directory → Change Log Directory....
+• Use Revert to Default to return to the built-in EverQuest Legends log path.
+
+LOG MONITORING
+• The active log is read while EverQuest continues writing to it.
+• Log truncation or replacement is detected and recovered automatically.
+• When switching logs, the meter loads up to the newest 1,000 lines.
+• The monitored character and server can be shown in the title.
+
+REFRESH RATE
+• Gear menu → Refresh Rate controls how often the active log is checked.
+• Available rates: 0.2s, 0.5s, 1.0s, 2.0s, 3.0s, and 5.0s.
+• 1.0s is the default.
+• The selected rate is saved in settings.json and applies immediately.
+• While hidden in the system tray, the meter temporarily uses 5.0s to reduce background activity.
+• Restoring the window immediately returns to the saved foreground rate.
+• The separate scan for a newer character log remains on its own schedule.
+
+DAMAGE AND DPS
+• Damage is grouped by attacker.
+• DPS uses a rolling 30-second damage window and never divides by less than one second.
+• Direct attacks, spell damage, damage-over-time ticks, and damage-shield damage are tracked.
+• Misses, parries, dodges, blocks, and ripostes update recent targeting during an active encounter.
+• A kill begins a three-second encounter barrier. Damage within that barrier continues the current encounter; otherwise the encounter is finalized.
+• Rows are ordered by total damage and then alphabetically.
+
+DAMAGE-SPELL CAST INDICATORS
+• Red ● — single-target direct-damage spell.
+• Red ○ — single-target damage-over-time spell.
+• Red ■ — AE, AOE, PBAE, or PBAOE direct-damage spell.
+• Red □ — AE, AOE, PBAE, or PBAOE damage-over-time spell.
+• Damage-cast indicators remain visible for four seconds.
+• The meter uses built-in spell lists, known spell-family patterns, and spell names learned from actual damage records.
+• When the same source and spell damage multiple targets in a short window, the spell is learned as an area spell for the rest of the run.
+
+TELEPORTATION INDICATORS
+• Golden ◆ — recognized Gate, portal, ring, teleport, translocate, evacuation, succor, relocation, or similar movement spell.
+• The golden indicator remains visible for four seconds.
+• Teleportation classification is checked before damage classification so teleport circles are not mistaken for area damage.
+
+SPELL-CASTING SUBTEXT
+• Gear menu → Spell Casting Subtext toggles the latest spell beneath each caster.
+• The line appears as “casting Spell Name” and remains visible for three seconds.
+• A newer spell immediately replaces the previous spell for that entity.
+• Casting text can appear alongside main-assist target or mismatch subtext.
+• Spell-name colors:
+  – Healing: green
+  – Teleportation and evacuation: golden
+  – Direct damage and damage over time: red
+  – Charm: bright pink
+  – Root: bright orange
+  – Lull and pacify: bright red
+  – Mesmerize: bluish green
+  – Stun: bright purple
+  – Unclassified spells: bright magenta
+
+RECENT-ATTACKER MARKERS
+• One or more ! marks after a name show how many distinct attackers damaged that entity during the last five seconds.
+• Example: “A goblin scout !!!” means three distinct attackers recently damaged it.
+
+ENTITY CLASSIFICATION
+• Yellow identifies the monitored character.
+• Gold identifies detected or manually tagged group members.
+• Green identifies the monitored character's known pet.
+• Red identifies hostile entities.
+• Blue identifies entities that have not yet been classified.
+• Gear menu → Unknown Entities continuously controls whether unclassified rows are shown.
+• When Unknown Entities is disabled, later damage, healing, crowd-control, or spell-cast activity cannot make an unknown row creep back into the table.
+
+IMMEDIATE HOSTILE CLASSIFICATION
+• A source is immediately classified as hostile when it damages the player, the player's pet, or a known/manual group member.
+• Recognized damaging or crowd-control spells against those protected entities can also classify the caster as hostile.
+• Landed charm, root, lull, mesmerize, or stun effects are correlated with recent cast-start messages to identify the hostile caster.
+• The player, owned pets, and known group members are excluded from automatic hostile classification.
+
+GROUP DETECTION AND MANUAL TAGGING
+• Group invitations, acceptance, joins, departures, disbands, and group chat help maintain the detected group.
+• Gear menu → Tag Group Member manually classifies an unknown entity as friendly.
+• Gear menu → Remove Manual Group Member removes a manual classification.
+• Always Show Group Members keeps the player and known group members visible before they deal damage.
+• Manual group members are saved in settings.json.
+
+MAIN ASSIST
+• Right-click the player or a group-member row and choose Set as Main Assist.
+• The main assist is underlined and displays a sword icon.
+• The main assist's current target appears beneath the name.
+• A group member attacking a different target shows red target subtext and a flashing warning icon.
+• Clear Main Assist removes the selection.
+• The selected main assist is saved between launches.
+
+HEALING INDICATORS
+• Green > — the entity began casting a recognized healing spell; lasts four seconds.
+• Green < — the player or a group member received a heal; lasts three seconds.
+• Green << — Lay on Hands recipient; lasts ten seconds and adds a flashing LoH label.
+• Green >> — Lay on Hands caster; lasts twelve seconds.
+• Multiple temporary healing indicators can appear simultaneously.
+• Healing spell names are recognized from built-in names, fragments, and actual healing records learned during the current session.
+
+HARD CROWD CONTROL
+• Bright pink: charm.
+• Bright orange: root.
+• Bright red: lull or pacify.
+• Bluish green: mesmerize.
+• Bright purple: stun.
+• ▲ on the caster means a normal or single-target CC spell is being cast.
+• ■ on the caster means a recognized AOE mesmerize or stun is being cast.
+• X on a target means that target is affected by a recognized CC spell.
+• Cast markers remain for four seconds; landed X markers remain for six seconds.
+• Recognized CC targets can be temporarily shown even without a damage row.
+
+EXPERIENCE
+• XP/h shows experience gained during the current monitored login/session.
+• Last 10 XP/h estimates the rate from the most recent ten experience gains.
+
+PLATINUM
+• The meter reads currency received from corpses and loot-sale messages.
+• Normal mode uses retained currency and elapsed time.
+• 3m Throttled mode uses a minimum three-minute window to reduce extreme early-session values.
+• Currency history is retained for up to one hour.
+
+DISPLAY OPTIONS
+• The gear menu can toggle player name, server name, XP/h, Last 10 XP/h, Platinum/h, unknown entities, always-visible group members, main-assist indicators, and spell-casting subtext.
+• Damage and DPS values can be aligned left or right.
+• Window position and size are saved automatically.
+
+SYSTEM TRAY AND SINGLE INSTANCE
+• Closing the window hides the meter in the Windows system tray; monitoring continues.
+• Double-click the tray icon or choose Show Spyxy's DPS Meter to restore it.
+• The tray menu also provides Exit.
+• Launching another copy restores the existing hidden or minimized window, then closes the new process before it reads logs.
+
+RESET
+• The reset button clears current damage, DPS, encounter state, XP, platinum, target history, healing indicators, teleport indicators, damage-spell indicators, casting subtext, and crowd-control indicators.
+• Reset does not erase saved application settings.
+
+SETTINGS AND TROUBLESHOOTING
+• Settings are stored in settings.json beside the executable.
+• If no log is detected, verify /log on and confirm the selected directory contains an eqlog_Character_server.txt file.
+• The newest matching log is selected. Log into or generate a new line for the desired character if the wrong character is active.
+• If settings do not save, confirm the application folder is writable.
+• Unrecognized effects depend on exact EverQuest Legends log text. Include the raw log line when reporting an issue.
+
+PROJECT
+• GitHub: https://github.com/khadesh/SpyxysDPSMeter
+• The Spyxy's DPS link in the lower-right corner opens the project page.
+""";
+
         private static readonly string[] TimestampFormats =
         {
             "ddd MMM d HH:mm:ss yyyy",
@@ -4772,6 +4925,192 @@ namespace SpyxysDPSMeter
         }
 
 
+        private void FeatureGuideMenuItem_Click(
+            object sender,
+            RoutedEventArgs e)
+        {
+            global::System.Windows.Controls.TextBlock featureText = new()
+            {
+                Text = FeatureHelpText,
+                TextWrapping =
+                    global::System.Windows.TextWrapping.Wrap,
+                Foreground =
+                    new global::System.Windows.Media.SolidColorBrush(
+                        global::System.Windows.Media.Color.FromRgb(
+                            232,
+                            236,
+                            241)),
+                FontSize = 12,
+                LineHeight = 18,
+                Padding =
+                    new global::System.Windows.Thickness(6)
+            };
+
+            global::System.Windows.Controls.ScrollViewer scrollViewer = new()
+            {
+                Content = featureText,
+                VerticalScrollBarVisibility =
+                    global::System.Windows.Controls.ScrollBarVisibility.Auto,
+                HorizontalScrollBarVisibility =
+                    global::System.Windows.Controls.ScrollBarVisibility.Disabled,
+                Margin =
+                    new global::System.Windows.Thickness(
+                        14,
+                        14,
+                        14,
+                        8)
+            };
+
+            global::System.Windows.Controls.Button projectButton = new()
+            {
+                Content = "GitHub Project",
+                Width = 110,
+                Height = 30,
+                Margin =
+                    new global::System.Windows.Thickness(
+                        0,
+                        0,
+                        8,
+                        0)
+            };
+
+            global::System.Windows.Controls.Button closeButton = new()
+            {
+                Content = "Close",
+                Width = 90,
+                Height = 30,
+                IsDefault = true,
+                IsCancel = true
+            };
+
+            global::System.Windows.Controls.StackPanel buttons = new()
+            {
+                Orientation =
+                    global::System.Windows.Controls.Orientation.Horizontal,
+                HorizontalAlignment =
+                    global::System.Windows.HorizontalAlignment.Right,
+                Margin =
+                    new global::System.Windows.Thickness(
+                        0,
+                        0,
+                        14,
+                        14)
+            };
+            buttons.Children.Add(projectButton);
+            buttons.Children.Add(closeButton);
+
+            global::System.Windows.Controls.Grid layout = new();
+            layout.RowDefinitions.Add(
+                new global::System.Windows.Controls.RowDefinition
+                {
+                    Height =
+                        new global::System.Windows.GridLength(
+                            1,
+                            global::System.Windows.GridUnitType.Star)
+                });
+            layout.RowDefinitions.Add(
+                new global::System.Windows.Controls.RowDefinition
+                {
+                    Height =
+                        global::System.Windows.GridLength.Auto
+                });
+
+            global::System.Windows.Controls.Grid.SetRow(
+                scrollViewer,
+                0);
+            global::System.Windows.Controls.Grid.SetRow(
+                buttons,
+                1);
+
+            layout.Children.Add(scrollViewer);
+            layout.Children.Add(buttons);
+
+            global::System.Windows.Controls.Border frame = new()
+            {
+                Background =
+                    new global::System.Windows.Media.SolidColorBrush(
+                        global::System.Windows.Media.Color.FromRgb(
+                            27,
+                            31,
+                            37)),
+                BorderBrush =
+                    new global::System.Windows.Media.SolidColorBrush(
+                        global::System.Windows.Media.Color.FromRgb(
+                            87,
+                            96,
+                            106)),
+                BorderThickness =
+                    new global::System.Windows.Thickness(1),
+                Child = layout
+            };
+
+            global::System.Windows.Window dialog = new()
+            {
+                Owner = this,
+                Title =
+                    "Spyxy's DPS Meter — Feature Guide",
+                Width = 700,
+                Height = 740,
+                MinWidth = 460,
+                MinHeight = 340,
+                MaxHeight =
+                    Math.Max(
+                        380,
+                        global::System.Windows.SystemParameters
+                            .WorkArea.Height * 0.9),
+                WindowStartupLocation =
+                    global::System.Windows.WindowStartupLocation.CenterOwner,
+                ResizeMode =
+                    global::System.Windows.ResizeMode.CanResize,
+                ShowInTaskbar = false,
+                Topmost = true,
+                Background =
+                    new global::System.Windows.Media.SolidColorBrush(
+                        global::System.Windows.Media.Color.FromRgb(
+                            27,
+                            31,
+                            37)),
+                Content = frame
+            };
+
+            projectButton.Click +=
+                (_, _) => OpenProjectPage(ProjectUrl);
+            closeButton.Click +=
+                (_, _) => dialog.Close();
+
+            dialog.ShowDialog();
+        }
+
+        private void OpenProjectPageMenuItem_Click(
+            object sender,
+            RoutedEventArgs e)
+        {
+            OpenProjectPage(ProjectUrl);
+        }
+
+        private void OpenProjectPage(
+            string? address)
+        {
+            try
+            {
+                Process.Start(
+                    new ProcessStartInfo
+                    {
+                        FileName =
+                            string.IsNullOrWhiteSpace(address)
+                                ? ProjectUrl
+                                : address,
+                        UseShellExecute = true
+                    });
+            }
+            catch (Exception ex)
+            {
+                SetStatus(
+                    $"Unable to open the project page: {ex.Message}");
+            }
+        }
+
+
         private void ChangeLogDirectoryMenuItem_Click(
             object sender,
             RoutedEventArgs e)
@@ -5516,27 +5855,10 @@ namespace SpyxysDPSMeter
             object sender,
             global::System.Windows.Navigation.RequestNavigateEventArgs e)
         {
-            try
-            {
-                string address =
-                    e.Uri?.AbsoluteUri ??
-                    ProjectUrl;
-
-                Process.Start(
-                    new ProcessStartInfo
-                    {
-                        FileName = address,
-                        UseShellExecute = true
-                    });
-
-                e.Handled = true;
-            }
-            catch (Exception ex)
-            {
-                e.Handled = true;
-                SetStatus(
-                    $"Unable to open the project page: {ex.Message}");
-            }
+            e.Handled = true;
+            OpenProjectPage(
+                e.Uri?.AbsoluteUri ??
+                ProjectUrl);
         }
 
         private void ResetButton_Click(object sender, RoutedEventArgs e)

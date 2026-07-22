@@ -255,6 +255,18 @@ The gear menu can toggle:
 
 Damage and DPS numbers can be aligned left or right.
 
+### In-app help
+
+Open the gear menu and choose:
+
+```text
+Help → Feature Guide...
+```
+
+The scrollable in-app feature guide explains log monitoring, refresh rates, damage and spell indicators, teleportation, casting subtext, entity classification, hostile detection, group tools, main assist, healing, crowd control, XP, platinum, display settings, system-tray behavior, reset behavior, settings, and troubleshooting.
+
+The same **Help** submenu also provides **Open GitHub Project**.
+
 ### System tray
 
 - Closing the window hides the meter to the Windows system tray.

@@ -220,6 +220,13 @@
                                               Header="Tag Group Member"/>
                                     <MenuItem x:Name="RemoveGroupMemberMenuItem"
                                               Header="Remove Manual Group Member"/>
+                                    <Separator/>
+                                    <MenuItem Header="Help">
+                                        <MenuItem Header="Feature Guide..."
+                                                  Click="FeatureGuideMenuItem_Click"/>
+                                        <MenuItem Header="Open GitHub Project"
+                                                  Click="OpenProjectPageMenuItem_Click"/>
+                                    </MenuItem>
                                 </ContextMenu>
                             </Button.ContextMenu>
                         </Button>

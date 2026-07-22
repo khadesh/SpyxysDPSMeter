@@ -1,0 +1,101 @@
+name: Release
+
+# Builds the installer and publishes a tagged GitHub Release whenever the
+# <Version> in SpyxysDPSMeter.csproj changes on master. If a release tag
+# for the current version already exists, the workflow exits early, so
+# ordinary pushes that do not bump the version are cheap no-ops.
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Read version from csproj
+        id: version
+        shell: pwsh
+        run: |
+          [xml]$csproj = Get-Content "SpyxysDPSMeter\SpyxysDPSMeter.csproj"
+          $version = ($csproj.Project.PropertyGroup.Version |
+              Where-Object { $_ } | Select-Object -First 1).Trim()
+          if ($version -notmatch '^\d+\.\d+\.\d+$') {
+              throw "Invalid or missing <Version> in csproj: '$version'"
+          }
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "tag=v$version" >> $env:GITHUB_OUTPUT
+
+      - name: Check whether tag already exists
+        id: tag
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = "${{ steps.version.outputs.tag }}"
+          git fetch --tags --quiet
+          if (git tag --list $tag) {
+              Write-Host "Tag $tag already exists - skipping release."
+              "exists=true" >> $env:GITHUB_OUTPUT
+          } else {
+              Write-Host "Tag $tag does not exist - building release."
+              "exists=false" >> $env:GITHUB_OUTPUT
+          }
+
+      - name: Setup .NET
+        if: steps.tag.outputs.exists == 'false'
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Publish self-contained win-x64 build
+        if: steps.tag.outputs.exists == 'false'
+        shell: pwsh
+        run: |
+          $version = "${{ steps.version.outputs.version }}"
+          dotnet publish SpyxysDPSMeter\SpyxysDPSMeter.csproj `
+              -c Release `
+              -r win-x64 `
+              --self-contained true `
+              -p:PublishSingleFile=true `
+              -p:PublishTrimmed=false `
+              -p:IncludeNativeLibrariesForSelfExtract=true `
+              -p:DebugType=None `
+              -p:DebugSymbols=false `
+              -p:AssemblyVersion="$version.0" `
+              -p:FileVersion="$version.0" `
+              -o SpyxysDPSMeter\publish\win-x64
+          if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed." }
+
+      - name: Compile installer
+        if: steps.tag.outputs.exists == 'false'
+        shell: pwsh
+        run: |
+          # Inno Setup 6 is preinstalled on windows-latest runners.
+          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          & $iscc "/DMyAppVersion=${{ steps.version.outputs.version }}" `
+              SpyxysDPSMeterInstaller.iss
+          if ($LASTEXITCODE -ne 0) { throw "Inno Setup compilation failed." }
+
+      - name: Create tagged release
+        if: steps.tag.outputs.exists == 'false'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $version = "${{ steps.version.outputs.version }}"
+          $tag = "${{ steps.version.outputs.tag }}"
+          gh release create $tag `
+              "InstallerOutput\SpyxysDPSMeter-Setup-$version-win-x64.exe" `
+              --title "Spyxy's DPS Meter $version" `
+              --generate-notes `
+              --target $env:GITHUB_SHA
+          if ($LASTEXITCODE -ne 0) { throw "gh release create failed." }

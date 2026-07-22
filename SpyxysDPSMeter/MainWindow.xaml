@@ -134,13 +134,30 @@
                                                   Click="PlatinumModeMenuItem_Click"/>
                                     </MenuItem>
                                     <Separator/>
-                                    <MenuItem x:Name="UnknownEntitiesMenuItem"
-                                              Header="Unknown Entities"
-                                              Tag="UnknownEntities"
-                                              IsCheckable="True"
-                                              IsChecked="True"
-                                              StaysOpenOnClick="True"
-                                              Click="DisplaySettingMenuItem_Click"/>
+                                    <MenuItem Header="Data Filtering">
+                                        <MenuItem x:Name="DataFilterAllDataMenuItem"
+                                                  Header="All data"
+                                                  Tag="AllData"
+                                                  ToolTip="Show all parsed players, pets, enemies, and other entities. Intended for private instances."
+                                                  IsCheckable="True"
+                                                  IsChecked="True"
+                                                  StaysOpenOnClick="True"
+                                                  Click="DataFilteringMenuItem_Click"/>
+                                        <MenuItem x:Name="DataFilterRemoveUnknownsMenuItem"
+                                                  Header="Remove unknowns"
+                                                  Tag="RemoveUnknowns"
+                                                  ToolTip="Hide unclassified public players and pets while retaining known group members, your pet, and known enemies."
+                                                  IsCheckable="True"
+                                                  StaysOpenOnClick="True"
+                                                  Click="DataFilteringMenuItem_Click"/>
+                                        <MenuItem x:Name="DataFilterOnlyKnownsMenuItem"
+                                                  Header="Only knowns"
+                                                  Tag="OnlyKnowns"
+                                                  ToolTip="Calculate only combat involving you, your pet, group members, and enemies directly engaged by them during the current encounter."
+                                                  IsCheckable="True"
+                                                  StaysOpenOnClick="True"
+                                                  Click="DataFilteringMenuItem_Click"/>
+                                    </MenuItem>
                                     <MenuItem x:Name="AlwaysShowGroupMembersMenuItem"
                                               Header="Always Show Group Members"
                                               Tag="AlwaysShowGroupMembers"

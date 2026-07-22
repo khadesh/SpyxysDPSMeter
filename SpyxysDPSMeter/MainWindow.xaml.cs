@@ -19,13 +19,19 @@ namespace SpyxysDPSMeter
 {
     public partial class MainWindow : Window
     {
+        private const bool IsDebugMode = false;
+
+        private const int DebugMaximumLogLines = 10000;
+        private const double DebugReplayWindowSeconds = 25.0;
+        private const double DebugMaximumSecondsPerLine = 0.0025;
+
         private const string DefaultLogDirectory =
             @"C:\Users\Public\Daybreak Game Company\Installed Games\EverQuest Legends\Logs";
 
         private const string ProjectUrl =
             "https://github.com/khadesh/SpyxysDPSMeter";
 
-        private const int MaximumLinesPerRead = 1000;
+        private const int MaximumRetainedLogLines = 1000;
         private const int DpsWindowSeconds = 30;
         private const int RecentVictimSeconds = 5;
         private const int FightBarrierSeconds = 3;
@@ -657,20 +663,45 @@ GETTING STARTED
 • Change the folder through Gear menu → Log Directory → Change Log Directory....
 • Use Revert to Default to return to the built-in EverQuest Legends log path.
 
+DEBUG SNAPSHOT MODE
+• Developers can toggle private const bool IsDebugMode at the top of MainWindow.
+• false keeps normal live-log behavior.
+• true finds the newest available log and reads up to its last 10,000 lines once at startup.
+• All parseable lines in that 10,000-line tail are compressed into a recent synthetic timeline of at most 25 seconds.
+• Login resets and kill barriers are suppressed during the snapshot load so the parsed tail behaves like one active fight that just happened.
+• Live reading and the recurring newer-log scan are not started in debug mode.
+• The title and status line display DEBUG SNAPSHOT so a test build is easy to recognize.
+
 LOG MONITORING
 • The active log is read while EverQuest continues writing to it.
 • Log truncation or replacement is detected and recovered automatically.
-• When switching logs, the meter loads up to the newest 1,000 lines.
+• The maximum processed lines per poll follows the effective refresh rate:
+  – 0.2s: up to 200 lines
+  – 0.5s: up to 500 lines
+  – 1.0s, 2.0s, 3.0s, or 5.0s: up to 1,000 lines
+• The meter retains up to 1,000 recent raw lines internally.
 • The monitored character and server can be shown in the title.
 
 REFRESH RATE
 • Gear menu → Refresh Rate controls how often the active log is checked.
 • Available rates: 0.2s, 0.5s, 1.0s, 2.0s, 3.0s, and 5.0s.
 • 1.0s is the default.
-• The selected rate is saved in settings.json and applies immediately.
-• While hidden in the system tray, the meter temporarily uses 5.0s to reduce background activity.
-• Restoring the window immediately returns to the saved foreground rate.
+• The selected rate and matching line cap apply immediately and are saved in settings.json.
+• While hidden in the system tray, the meter temporarily uses 5.0s and the 1,000-line cap.
+• Restoring the window immediately returns to the saved foreground rate and its matching cap.
 • The separate scan for a newer character log remains on its own schedule.
+
+DATA FILTERING
+• Gear menu → Data Filtering provides three mutually exclusive modes:
+  – All data: shows and calculates every parsed entity. Best for private instances.
+  – Remove unknowns: hides unclassified public players and pets while retaining the player, owned pet, group members, manually tagged members, and known enemies. Combat data continues to be parsed as before.
+  – Only knowns: calculates only combat scoped to the player, owned pet, and detected or manually tagged group members.
+• In Only knowns, an enemy enters the current encounter scope only after direct damage, an avoided attack, or a recognized harmful spell connects it with the player, owned pet, or group.
+• Once scoped, damage is accepted only when both sides of the event are protected friendlies or enemies scoped to that encounter.
+• Unrelated public players, pets, and previously known enemies fighting elsewhere are neither displayed nor included in DPS.
+• An outsider damaging a scoped enemy is excluded because that outsider was not tagged by the protected group.
+• Switching to Only knowns during a fight rebuilds the scope from direct interactions already recorded in the current encounter.
+• Older settings migrate automatically: Unknown Entities enabled becomes All data; disabled becomes Remove unknowns.
 
 DAMAGE AND DPS
 • Damage is grouped by attacker.
@@ -709,6 +740,7 @@ SPELL-CASTING SUBTEXT
   – Mesmerize: bluish green
   – Stun: bright purple
   – Unclassified spells: bright magenta
+• Data Filtering is applied after temporary casting rows are collected, so hidden entities cannot bypass the selected filter.
 
 RECENT-ATTACKER MARKERS
 • One or more ! marks after a name show how many distinct attackers damaged that entity during the last five seconds.
@@ -720,21 +752,15 @@ ENTITY CLASSIFICATION
 • Green identifies the monitored character's known pet.
 • Red identifies hostile entities.
 • Blue identifies entities that have not yet been classified.
-• Gear menu → Unknown Entities continuously controls whether unclassified rows are shown.
-• When Unknown Entities is disabled, later damage, healing, crowd-control, or spell-cast activity cannot make an unknown row creep back into the table.
-
-IMMEDIATE HOSTILE CLASSIFICATION
-• A source is immediately classified as hostile when it damages the player, the player's pet, or a known/manual group member.
-• Recognized damaging or crowd-control spells against those protected entities can also classify the caster as hostile.
-• Landed charm, root, lull, mesmerize, or stun effects are correlated with recent cast-start messages to identify the hostile caster.
-• The player, owned pets, and known group members are excluded from automatic hostile classification.
+• Damage or a recognized harmful effect against the player, owned pet, or group immediately marks its source hostile.
+• In Only knowns, a target attacked by the protected group is also scoped and treated as hostile for that encounter.
 
 GROUP DETECTION AND MANUAL TAGGING
 • Group invitations, acceptance, joins, departures, disbands, and group chat help maintain the detected group.
 • Gear menu → Tag Group Member manually classifies an unknown entity as friendly.
 • Gear menu → Remove Manual Group Member removes a manual classification.
 • Always Show Group Members keeps the player and known group members visible before they deal damage.
-• Manual group members are saved in settings.json.
+• Manual group members and the selected data-filtering mode are saved in settings.json.
 
 MAIN ASSIST
 • Right-click the player or a group-member row and choose Set as Main Assist.
@@ -762,7 +788,7 @@ HARD CROWD CONTROL
 • ■ on the caster means a recognized AOE mesmerize or stun is being cast.
 • X on a target means that target is affected by a recognized CC spell.
 • Cast markers remain for four seconds; landed X markers remain for six seconds.
-• Recognized CC targets can be temporarily shown even without a damage row.
+• A harmful CC interaction with the protected group can immediately scope and classify its caster in Only knowns.
 
 EXPERIENCE
 • XP/h shows experience gained during the current monitored login/session.
@@ -775,7 +801,8 @@ PLATINUM
 • Currency history is retained for up to one hour.
 
 DISPLAY OPTIONS
-• The gear menu can toggle player name, server name, XP/h, Last 10 XP/h, Platinum/h, unknown entities, always-visible group members, main-assist indicators, and spell-casting subtext.
+• The gear menu can toggle player name, server name, XP/h, Last 10 XP/h, Platinum/h, always-visible group members, main-assist indicators, and spell-casting subtext.
+• Data Filtering replaces the former Unknown Entities toggle.
 • Damage and DPS values can be aligned left or right.
 • Window position and size are saved automatically.
 
@@ -783,14 +810,17 @@ SYSTEM TRAY AND SINGLE INSTANCE
 • Closing the window hides the meter in the Windows system tray; monitoring continues.
 • Double-click the tray icon or choose Show Spyxy's DPS Meter to restore it.
 • The tray menu also provides Exit.
+• While hidden, the active-log refresh interval temporarily changes to 5.0s and uses the 1,000-line cap.
 • Launching another copy restores the existing hidden or minimized window, then closes the new process before it reads logs.
 
 RESET
-• The reset button clears current damage, DPS, encounter state, XP, platinum, target history, healing indicators, teleport indicators, damage-spell indicators, casting subtext, and crowd-control indicators.
+• The reset button clears current damage, DPS, encounter scope, XP, platinum, target history, healing indicators, teleport indicators, damage-spell indicators, casting subtext, and crowd-control indicators.
 • Reset does not erase saved application settings.
 
 SETTINGS AND TROUBLESHOOTING
 • Settings are stored in settings.json beside the executable.
+• DataFilteringMode stores AllData, RemoveUnknowns, or OnlyKnowns.
+• Existing ShowUnknownEntities settings are migrated automatically.
 • If no log is detected, verify /log on and confirm the selected directory contains an eqlog_Character_server.txt file.
 • The newest matching log is selected. Log into or generate a new line for the desired character if the wrong character is active.
 • If settings do not save, confirm the application folder is writable.
@@ -858,6 +888,7 @@ PROJECT
         private bool _exitRequested;
         private bool _windowHasLoaded;
         private bool _isApplyingWindowPlacement;
+        private bool _isLoadingDebugSnapshot;
 
         private readonly List<DamageEvent> _fightDamageEvents = new();
         private readonly List<ExperienceEvent> _experienceEvents = new();
@@ -866,6 +897,8 @@ PROJECT
         private readonly Dictionary<string, string> _petOwners =
             new(StringComparer.OrdinalIgnoreCase);
         private readonly HashSet<string> _knownBadGuys =
+            new(StringComparer.OrdinalIgnoreCase);
+        private readonly HashSet<string> _onlyKnownCombatEntities =
             new(StringComparer.OrdinalIgnoreCase);
         private readonly HashSet<string> _groupMembers =
             new(StringComparer.OrdinalIgnoreCase);
@@ -920,7 +953,8 @@ PROJECT
         private bool _showExperiencePerHour = true;
         private bool _showLastTenExperience = true;
         private bool _showPlatinumPerHour = true;
-        private bool _showUnknownEntities = true;
+        private DataFilterMode _dataFilterMode =
+            DataFilterMode.AllData;
         private bool _numbersRightAligned;
         private bool _useThrottledPlatinumRate = true;
         private bool _alwaysShowGroupMembers = true;
@@ -975,6 +1009,12 @@ PROJECT
         {
             _windowHasLoaded = true;
             EnsureWindowVisible();
+
+            if (IsDebugMode)
+            {
+                LoadDebugSnapshotFromLatestLog();
+                return;
+            }
 
             DetectLatestLogFile();
             _readTimer.Start();
@@ -1480,6 +1520,165 @@ PROJECT
             RefreshDisplay();
         }
 
+        private void LoadDebugSnapshotFromLatestLog()
+        {
+            try
+            {
+                if (!Directory.Exists(_logDirectory))
+                {
+                    SetStatus(
+                        $"DEBUG — Log folder not found: {_logDirectory}");
+                    return;
+                }
+
+                FileInfo? newest = Directory
+                    .EnumerateFiles(
+                        _logDirectory,
+                        "eqlog_*_*.txt",
+                        SearchOption.TopDirectoryOnly)
+                    .Select(path => new FileInfo(path))
+                    .Where(info =>
+                        FileNameRegex.IsMatch(info.Name))
+                    .OrderByDescending(info =>
+                        info.LastWriteTimeUtc)
+                    .ThenByDescending(info =>
+                        info.Length)
+                    .FirstOrDefault();
+
+                if (newest == null)
+                {
+                    SetStatus(
+                        "DEBUG — No eqlog_CHARACTER_SERVER.txt file was found.");
+                    return;
+                }
+
+                Match fileMatch =
+                    FileNameRegex.Match(newest.Name);
+                if (!fileMatch.Success)
+                {
+                    SetStatus(
+                        $"DEBUG — The newest log name was not recognized: {newest.Name}");
+                    return;
+                }
+
+                _activeFilePath = newest.FullName;
+                _characterName =
+                    fileMatch.Groups["character"].Value;
+                _serverName =
+                    CapitalizeFirst(
+                        fileMatch.Groups["server"].Value);
+
+                ResetAllState();
+
+                TailReadResult tail =
+                    ReadLastLinesShared(
+                        newest.FullName,
+                        DebugMaximumLogLines);
+
+                _fileOffset = tail.FileLength;
+                _lastWriteTimeUtc = newest.LastWriteTimeUtc;
+                _pendingText = string.Empty;
+
+                List<string> replayLines = tail.Lines
+                    .Where(line =>
+                        TryGetMessage(
+                            line,
+                            out _,
+                            out _))
+                    .ToList();
+
+                if (replayLines.Count == 0)
+                {
+                    RefreshDisplay();
+                    SetStatus(
+                        $"DEBUG — No parseable lines were found in {newest.Name}.");
+                    return;
+                }
+
+                DateTime replayEnd =
+                    DateTime.Now.AddMilliseconds(-100);
+
+                double secondsPerLine =
+                    replayLines.Count <= 1
+                        ? 0
+                        : Math.Min(
+                            DebugMaximumSecondsPerLine,
+                            DebugReplayWindowSeconds /
+                            (replayLines.Count - 1));
+
+                DateTime replayStart =
+                    replayEnd.AddSeconds(
+                        -secondsPerLine *
+                        Math.Max(
+                            0,
+                            replayLines.Count - 1));
+
+                _isLoadingDebugSnapshot = true;
+
+                try
+                {
+                    for (int index = 0;
+                         index < replayLines.Count;
+                         index++)
+                    {
+                        DateTime syntheticTimestamp =
+                            replayStart.AddSeconds(
+                                secondsPerLine * index);
+
+                        ProcessRawLine(
+                            replayLines[index],
+                            isInitialLoad: true,
+                            timestampOverride:
+                                syntheticTimestamp);
+                    }
+                }
+                finally
+                {
+                    _isLoadingDebugSnapshot = false;
+                }
+
+                _pendingBarrierTimestamp = null;
+                _pendingBarrierWallClock = null;
+                _fightEnd = null;
+                _latestLogTimestamp = replayEnd;
+
+                if (_fightDamageEvents.Count > 0)
+                {
+                    _fightStart =
+                        _fightDamageEvents.Min(
+                            entry => entry.Timestamp);
+                    _lastCombatActivity =
+                        _fightDamageEvents.Max(
+                            entry => entry.Timestamp);
+                    _fightActive = true;
+                }
+
+                if (!_sessionStart.HasValue)
+                {
+                    _sessionStart = replayStart;
+                }
+
+                PruneOldDamageEvents();
+                RefreshDisplay();
+
+                string fightState =
+                    _fightActive
+                        ? "Combat active"
+                        : _fightStart.HasValue
+                            ? "Last fight complete"
+                            : "Waiting for damage";
+
+                SetStatus(
+                    $"DEBUG snapshot — {fightState} — loaded {replayLines.Count:N0} lines from {newest.Name}");
+            }
+            catch (Exception ex)
+            {
+                SetStatus(
+                    $"DEBUG — Unable to load the snapshot: {ex.Message}");
+            }
+        }
+
+
         private void DetectLatestLogFile()
         {
             try
@@ -1541,7 +1740,13 @@ PROJECT
 
                 ResetAllState();
 
-                TailReadResult tail = ReadLastLinesShared(path, MaximumLinesPerRead);
+                int maximumLinesPerRead =
+                    GetCurrentMaximumLinesPerRead();
+
+                TailReadResult tail =
+                    ReadLastLinesShared(
+                        path,
+                        maximumLinesPerRead);
                 _fileOffset = tail.FileLength;
                 _lastWriteTimeUtc = File.GetLastWriteTimeUtc(path);
 
@@ -1621,8 +1826,9 @@ PROJECT
                 long bytesAvailable = info.Length - _fileOffset;
                 if (bytesAvailable > int.MaxValue)
                 {
-                    // This should never happen in a one-second interval. Recover by
-                    // loading only the newest 1000 lines instead of allocating gigabytes.
+                    // This should never happen during a normal polling interval.
+                    // Recover by reopening the log and loading only the current
+                    // refresh-rate line cap instead of allocating gigabytes.
                     SwitchToLogFile(_activeFilePath);
                     return;
                 }
@@ -1667,7 +1873,12 @@ PROJECT
                     .Take(Math.Max(0, completeCount))
                     .Where(line => !string.IsNullOrWhiteSpace(line));
 
-                List<string> lines = completeLines.TakeLast(MaximumLinesPerRead).ToList();
+                int maximumLinesPerRead =
+                    GetCurrentMaximumLinesPerRead();
+
+                List<string> lines = completeLines
+                    .TakeLast(maximumLinesPerRead)
+                    .ToList();
 
                 foreach (string line in lines)
                 {
@@ -1690,12 +1901,22 @@ PROJECT
             }
         }
 
-        private void ProcessRawLine(string rawLine, bool isInitialLoad)
+        private void ProcessRawLine(
+            string rawLine,
+            bool isInitialLoad,
+            DateTime? timestampOverride = null)
         {
-            if (!TryGetMessage(rawLine, out DateTime timestamp, out string message))
+            if (!TryGetMessage(
+                    rawLine,
+                    out DateTime parsedTimestamp,
+                    out string message))
             {
                 return;
             }
+
+            DateTime timestamp =
+                timestampOverride ??
+                parsedTimestamp;
 
             if (_latestLogTimestamp == null || timestamp > _latestLogTimestamp)
             {
@@ -1703,7 +1924,7 @@ PROJECT
             }
 
             _recentLogLines.Enqueue(new CachedLogLine(timestamp, rawLine));
-            while (_recentLogLines.Count > MaximumLinesPerRead)
+            while (_recentLogLines.Count > MaximumRetainedLogLines)
             {
                 _recentLogLines.Dequeue();
             }
@@ -1721,6 +1942,12 @@ PROJECT
                     "Welcome to EverQuest Legends!",
                     StringComparison.OrdinalIgnoreCase))
             {
+                if (_isLoadingDebugSnapshot)
+                {
+                    _sessionStart ??= timestamp;
+                    return;
+                }
+
                 ResetForNewLogin(timestamp);
                 return;
             }
@@ -1741,10 +1968,29 @@ PROJECT
             Match petMatch = PetAttackRegex.Match(message);
             if (petMatch.Success)
             {
-                string pet = NormalizeEntity(petMatch.Groups["pet"].Value);
+                string pet =
+                    NormalizeEntity(
+                        petMatch.Groups["pet"].Value);
+                string target =
+                    NormalizeEntity(
+                        petMatch.Groups["target"].Value);
+
                 if (!string.IsNullOrWhiteSpace(pet))
                 {
                     _petOwners[pet] = _characterName;
+
+                    if (_dataFilterMode ==
+                        DataFilterMode.OnlyKnowns)
+                    {
+                        RebuildOnlyKnownCombatScope();
+
+                        if (_fightActive)
+                        {
+                            RegisterOnlyKnownCombatInteraction(
+                                pet,
+                                target);
+                        }
+                    }
                 }
 
                 return;
@@ -1800,15 +2046,26 @@ PROJECT
                     _pendingPartyExperienceTimestamp = null;
                 }
 
-                if (IsSelf(killer) || IsOwnedPet(killer))
+                if (!ShouldProcessKillForCurrentFilter(
+                        killedEntity,
+                        killer))
+                {
+                    return;
+                }
+
+                if (IsProtectedFriendlyEntity(killer))
                 {
                     _knownBadGuys.Add(killedEntity);
                 }
 
-                if (_fightActive)
+                if (_fightActive &&
+                    !_isLoadingDebugSnapshot)
                 {
                     _pendingBarrierTimestamp = timestamp;
-                    _pendingBarrierWallClock = isInitialLoad ? null : DateTime.Now;
+                    _pendingBarrierWallClock =
+                        isInitialLoad
+                            ? null
+                            : DateTime.Now;
                 }
 
                 return;
@@ -1834,6 +2091,18 @@ PROJECT
 
         private void HandleDamageEvent(DamageEvent damageEvent)
         {
+            bool directlyInvolvesProtectedEntity =
+                IsProtectedFriendlyEntity(
+                    damageEvent.Source) ||
+                IsProtectedFriendlyEntity(
+                    damageEvent.Target);
+
+            if (!ShouldAcceptDamageEventForCurrentFilter(
+                    damageEvent))
+            {
+                return;
+            }
+
             MarkHostileIfThreatensProtectedEntity(
                 damageEvent.Source,
                 damageEvent.Target);
@@ -1854,7 +2123,28 @@ PROJECT
 
             if (!_fightActive)
             {
+                if (_dataFilterMode ==
+                        DataFilterMode.OnlyKnowns &&
+                    !directlyInvolvesProtectedEntity)
+                {
+                    return;
+                }
+
                 StartNewFight(damageEvent.Timestamp);
+            }
+
+            RegisterOnlyKnownCombatInteraction(
+                damageEvent.Source,
+                damageEvent.Target);
+
+            if (_dataFilterMode ==
+                    DataFilterMode.OnlyKnowns &&
+                (!IsEntityInOnlyKnownCombatScope(
+                     damageEvent.Source) ||
+                 !IsEntityInOnlyKnownCombatScope(
+                     damageEvent.Target)))
+            {
+                return;
             }
 
             _lastCombatActivity = damageEvent.Timestamp;
@@ -1878,6 +2168,17 @@ PROJECT
                 return;
             }
 
+            if (_dataFilterMode ==
+                    DataFilterMode.OnlyKnowns &&
+                !IsDirectProtectedCombatInteraction(
+                    source,
+                    target) &&
+                (!IsEntityInOnlyKnownCombatScope(source) ||
+                 !IsEntityInOnlyKnownCombatScope(target)))
+            {
+                return;
+            }
+
             if (_pendingBarrierTimestamp.HasValue)
             {
                 if (timestamp <=
@@ -1891,6 +2192,21 @@ PROJECT
                     FinalizeFight(_pendingBarrierTimestamp.Value);
                     return;
                 }
+            }
+
+            RegisterOnlyKnownCombatInteraction(
+                source,
+                target);
+            MarkHostileIfThreatensProtectedEntity(
+                source,
+                target);
+
+            if (_dataFilterMode ==
+                    DataFilterMode.OnlyKnowns &&
+                (!IsEntityInOnlyKnownCombatScope(source) ||
+                 !IsEntityInOnlyKnownCombatScope(target)))
+            {
+                return;
             }
 
             _lastCombatActivity = timestamp;
@@ -1907,6 +2223,7 @@ PROJECT
         {
             _fightDamageEvents.Clear();
             _latestTargets.Clear();
+            _onlyKnownCombatEntities.Clear();
             _fightStart = timestamp;
             _fightEnd = null;
             _lastCombatActivity = timestamp;
@@ -2019,6 +2336,13 @@ PROJECT
                 _groupMembers.Clear();
                 _pendingGroupInviter = null;
                 _pendingPartyExperienceTimestamp = null;
+
+                if (_dataFilterMode ==
+                    DataFilterMode.OnlyKnowns)
+                {
+                    RebuildOnlyKnownCombatScope();
+                }
+
                 return true;
             }
 
@@ -2034,6 +2358,13 @@ PROJECT
             {
                 string member = NormalizeEntity(match.Groups["member"].Value);
                 _groupMembers.Remove(member);
+
+                if (_dataFilterMode ==
+                    DataFilterMode.OnlyKnowns)
+                {
+                    RebuildOnlyKnownCombatScope();
+                }
+
                 return true;
             }
 
@@ -2053,6 +2384,12 @@ PROJECT
             if (!string.IsNullOrWhiteSpace(member) && !IsSelf(member))
             {
                 _groupMembers.Add(member);
+
+                if (_dataFilterMode ==
+                    DataFilterMode.OnlyKnowns)
+                {
+                    RebuildOnlyKnownCombatScope();
+                }
             }
         }
 
@@ -2116,6 +2453,9 @@ PROJECT
                             spellName,
                             target);
 
+                    RegisterOnlyKnownCombatInteraction(
+                        caster,
+                        target);
                     MarkHostileIfThreatensProtectedEntity(
                         caster,
                         target);
@@ -2696,6 +3036,9 @@ PROJECT
                         type,
                         target);
 
+            RegisterOnlyKnownCombatInteraction(
+                caster,
+                target);
             MarkHostileIfThreatensProtectedEntity(
                 caster,
                 target);
@@ -3749,6 +4092,10 @@ PROJECT
                 target,
                 null);
 
+            RegisterOnlyKnownCombatInteraction(
+                source,
+                target);
+
             if (!IsProtectedFriendlyEntity(target) ||
                 IsProtectedFriendlyEntity(source))
             {
@@ -4113,6 +4460,7 @@ PROJECT
                 .Where(damage =>
                     damage.Timestamp >= windowStart &&
                     damage.Timestamp <= displayEnd)
+                .Where(ShouldIncludeDamageEventInCurrentDisplay)
                 .ToList();
 
             DateTime victimCutoff = displayEnd.AddSeconds(-RecentVictimSeconds);
@@ -4175,9 +4523,9 @@ PROJECT
                 }
             }
 
-            // Apply the unknown-entity filter after every possible source
+            // Apply the selected data filter after every possible row source
             // has been added. This prevents temporary cast, healing, or CC
-            // visuals from reintroducing hidden unknown rows.
+            // visuals from bypassing Remove unknowns or Only knowns.
             displaySources.RemoveWhere(
                 entity => !ShouldShowEntity(entity));
 
@@ -4343,17 +4691,25 @@ PROJECT
                 return;
             }
 
+            string statusPrefix =
+                IsDebugMode
+                    ? "DEBUG snapshot — "
+                    : string.Empty;
+
             if (_fightActive)
             {
-                SetStatus($"Combat active — {Path.GetFileName(_activeFilePath)}");
+                SetStatus(
+                    $"{statusPrefix}Combat active — {Path.GetFileName(_activeFilePath)}");
             }
             else if (_fightStart.HasValue)
             {
-                SetStatus($"Last fight complete — {Path.GetFileName(_activeFilePath)}");
+                SetStatus(
+                    $"{statusPrefix}Last fight complete — {Path.GetFileName(_activeFilePath)}");
             }
             else
             {
-                SetStatus($"Waiting for damage — {Path.GetFileName(_activeFilePath)}");
+                SetStatus(
+                    $"{statusPrefix}Waiting for damage — {Path.GetFileName(_activeFilePath)}");
             }
         }
 
@@ -4412,15 +4768,24 @@ PROJECT
 
         private bool ShouldShowEntity(string source)
         {
-            if (_showUnknownEntities)
+            return _dataFilterMode switch
             {
-                return true;
-            }
+                DataFilterMode.AllData =>
+                    true,
 
-            return IsSelf(source) ||
-                   IsOwnedPet(source) ||
-                   IsGroupMember(source) ||
-                   _knownBadGuys.Contains(source);
+                DataFilterMode.RemoveUnknowns =>
+                    IsSelf(source) ||
+                    IsOwnedPet(source) ||
+                    IsGroupMember(source) ||
+                    _knownBadGuys.Contains(source),
+
+                DataFilterMode.OnlyKnowns =>
+                    IsEntityInOnlyKnownCombatScope(
+                        source),
+
+                _ =>
+                    true
+            };
         }
 
         private (global::System.Windows.Media.Brush RowBrush, global::System.Windows.Media.Brush TextBrush) GetRowColors(string source)
@@ -4469,12 +4834,17 @@ PROJECT
                 identityParts.Add(_serverName);
             }
 
-            List<string> titleParts = new()
+            List<string> titleParts = new();
+
+            if (IsDebugMode)
             {
+                titleParts.Add("DEBUG SNAPSHOT");
+            }
+
+            titleParts.Add(
                 identityParts.Count > 0
                     ? string.Join(" - ", identityParts)
-                    : "DPS Meter"
-            };
+                    : "DPS Meter");
 
             if (_showExperiencePerHour)
             {
@@ -4659,6 +5029,7 @@ PROJECT
             _recentLogLines.Clear();
             _petOwners.Clear();
             _knownBadGuys.Clear();
+            _onlyKnownCombatEntities.Clear();
             _groupMembers.Clear();
             _latestTargets.Clear();
             ClearSpecialVisualEvents();
@@ -4685,6 +5056,7 @@ PROJECT
             _recentLogLines.Enqueue(new CachedLogLine(timestamp, $"[{timestamp:ddd MMM dd HH:mm:ss yyyy}] Welcome to EverQuest Legends!"));
             _petOwners.Clear();
             _knownBadGuys.Clear();
+            _onlyKnownCombatEntities.Clear();
             _groupMembers.Clear();
             _latestTargets.Clear();
             ClearSpecialVisualEvents();
@@ -5327,10 +5699,6 @@ PROJECT
                     _showPlatinumPerHour = isEnabled;
                     break;
 
-                case "UnknownEntities":
-                    _showUnknownEntities = isEnabled;
-                    break;
-
                 case "AlwaysShowGroupMembers":
                     _alwaysShowGroupMembers = isEnabled;
                     break;
@@ -5516,7 +5884,7 @@ PROJECT
                 TagGroupMemberMenuItem.Items.Add(
                     new global::System.Windows.Controls.MenuItem
                     {
-                        Header = "No unknown entities in the current meter",
+                        Header = "No unclassified entities in the current meter",
                         IsEnabled = false
                     });
             }
@@ -5576,6 +5944,13 @@ PROJECT
             }
 
             _manualGroupMembers.Add(entity);
+
+            if (_dataFilterMode ==
+                DataFilterMode.OnlyKnowns)
+            {
+                RebuildOnlyKnownCombatScope();
+            }
+
             SaveSettings();
             PopulateGroupMemberMenus();
             RefreshDisplay();
@@ -5595,6 +5970,12 @@ PROJECT
 
             _manualGroupMembers.Remove(entity);
 
+            if (_dataFilterMode ==
+                DataFilterMode.OnlyKnowns)
+            {
+                RebuildOnlyKnownCombatScope();
+            }
+
             if (!IsGroupMember(entity) &&
                 entity.Equals(
                     _mainAssistName,
@@ -5607,6 +5988,243 @@ PROJECT
             PopulateGroupMemberMenus();
             RefreshDisplay();
             SetStatus($"{entity} removed from manual group members.");
+        }
+
+        private void DataFilteringMenuItem_Click(
+            object sender,
+            RoutedEventArgs e)
+        {
+            if (sender is not global::System.Windows.Controls.MenuItem menuItem ||
+                menuItem.Tag is not string requestedMode)
+            {
+                return;
+            }
+
+            _dataFilterMode =
+                ParseDataFilterMode(
+                    requestedMode,
+                    legacyShowUnknownEntities: null);
+
+            if (_dataFilterMode ==
+                DataFilterMode.OnlyKnowns)
+            {
+                RebuildOnlyKnownCombatScope();
+            }
+
+            ApplySettingsToMenuItems();
+            SaveSettings();
+            RefreshDisplay();
+
+            SetStatus(
+                $"Data filtering: {GetDataFilterDisplayName(_dataFilterMode)}.");
+        }
+
+        private static DataFilterMode ParseDataFilterMode(
+            string? value,
+            bool? legacyShowUnknownEntities)
+        {
+            if (!string.IsNullOrWhiteSpace(value) &&
+                Enum.TryParse(
+                    value,
+                    ignoreCase: true,
+                    out DataFilterMode parsedMode))
+            {
+                return parsedMode switch
+                {
+                    DataFilterMode.AllData =>
+                        DataFilterMode.AllData,
+                    DataFilterMode.RemoveUnknowns =>
+                        DataFilterMode.RemoveUnknowns,
+                    DataFilterMode.OnlyKnowns =>
+                        DataFilterMode.OnlyKnowns,
+                    _ =>
+                        DataFilterMode.AllData
+                };
+            }
+
+            return legacyShowUnknownEntities == false
+                ? DataFilterMode.RemoveUnknowns
+                : DataFilterMode.AllData;
+        }
+
+        private static string GetDataFilterDisplayName(
+            DataFilterMode mode)
+        {
+            return mode switch
+            {
+                DataFilterMode.AllData =>
+                    "All data",
+                DataFilterMode.RemoveUnknowns =>
+                    "Remove unknowns",
+                DataFilterMode.OnlyKnowns =>
+                    "Only knowns",
+                _ =>
+                    "All data"
+            };
+        }
+
+        private bool IsDirectProtectedCombatInteraction(
+            string? source,
+            string? target)
+        {
+            return (!string.IsNullOrWhiteSpace(source) &&
+                    IsProtectedFriendlyEntity(source)) ||
+                   (!string.IsNullOrWhiteSpace(target) &&
+                    IsProtectedFriendlyEntity(target));
+        }
+
+        private bool IsEntityInOnlyKnownCombatScope(
+            string entity)
+        {
+            return !string.IsNullOrWhiteSpace(entity) &&
+                   (IsProtectedFriendlyEntity(entity) ||
+                    _onlyKnownCombatEntities.Contains(entity));
+        }
+
+        private void RegisterOnlyKnownCombatInteraction(
+            string? source,
+            string? target)
+        {
+            if (_dataFilterMode !=
+                    DataFilterMode.OnlyKnowns ||
+                string.IsNullOrWhiteSpace(source) ||
+                string.IsNullOrWhiteSpace(target))
+            {
+                return;
+            }
+
+            source =
+                NormalizeVisualEntity(
+                    source,
+                    null);
+            target =
+                NormalizeVisualEntity(
+                    target,
+                    null);
+
+            bool sourceIsProtected =
+                IsProtectedFriendlyEntity(source);
+            bool targetIsProtected =
+                IsProtectedFriendlyEntity(target);
+
+            if (sourceIsProtected &&
+                !targetIsProtected)
+            {
+                _onlyKnownCombatEntities.Add(target);
+                _knownBadGuys.Add(target);
+            }
+
+            if (targetIsProtected &&
+                !sourceIsProtected)
+            {
+                _onlyKnownCombatEntities.Add(source);
+                _knownBadGuys.Add(source);
+            }
+        }
+
+        private void RebuildOnlyKnownCombatScope()
+        {
+            _onlyKnownCombatEntities.Clear();
+
+            if (_dataFilterMode !=
+                DataFilterMode.OnlyKnowns)
+            {
+                return;
+            }
+
+            foreach (DamageEvent damageEvent in
+                     _fightDamageEvents
+                         .OrderBy(
+                             entry => entry.Timestamp))
+            {
+                RegisterOnlyKnownCombatInteraction(
+                    damageEvent.Source,
+                    damageEvent.Target);
+            }
+
+            foreach (KeyValuePair<string, TargetEvent> targetPair in
+                     _latestTargets)
+            {
+                RegisterOnlyKnownCombatInteraction(
+                    targetPair.Key,
+                    targetPair.Value.Target);
+            }
+        }
+
+        private bool ShouldAcceptDamageEventForCurrentFilter(
+            DamageEvent damageEvent)
+        {
+            if (_dataFilterMode !=
+                DataFilterMode.OnlyKnowns)
+            {
+                return true;
+            }
+
+            if (IsDirectProtectedCombatInteraction(
+                    damageEvent.Source,
+                    damageEvent.Target))
+            {
+                return true;
+            }
+
+            return _fightActive &&
+                   IsEntityInOnlyKnownCombatScope(
+                       damageEvent.Source) &&
+                   IsEntityInOnlyKnownCombatScope(
+                       damageEvent.Target);
+        }
+
+        private bool ShouldIncludeDamageEventInCurrentDisplay(
+            DamageEvent damageEvent)
+        {
+            if (_dataFilterMode !=
+                DataFilterMode.OnlyKnowns)
+            {
+                return true;
+            }
+
+            return IsEntityInOnlyKnownCombatScope(
+                       damageEvent.Source) &&
+                   IsEntityInOnlyKnownCombatScope(
+                       damageEvent.Target);
+        }
+
+        private bool ShouldProcessKillForCurrentFilter(
+            string killedEntity,
+            string killer)
+        {
+            if (_dataFilterMode !=
+                DataFilterMode.OnlyKnowns)
+            {
+                return true;
+            }
+
+            RegisterOnlyKnownCombatInteraction(
+                killer,
+                killedEntity);
+
+            return IsProtectedFriendlyEntity(killedEntity) ||
+                   IsProtectedFriendlyEntity(killer) ||
+                   _onlyKnownCombatEntities.Contains(
+                       killedEntity);
+        }
+
+        private int GetCurrentMaximumLinesPerRead()
+        {
+            double intervalSeconds =
+                _readTimer.Interval.TotalSeconds;
+
+            if (intervalSeconds <= 0.2001)
+            {
+                return 200;
+            }
+
+            if (intervalSeconds <= 0.5001)
+            {
+                return 500;
+            }
+
+            return 1000;
         }
 
         private static double NormalizeLogRefreshIntervalSeconds(
@@ -5662,8 +6280,10 @@ PROJECT
                     settings.ShowLastTenExperience;
                 _showPlatinumPerHour =
                     settings.ShowPlatinumPerHour;
-                _showUnknownEntities =
-                    settings.ShowUnknownEntities;
+                _dataFilterMode =
+                    ParseDataFilterMode(
+                        settings.DataFilteringMode,
+                        settings.ShowUnknownEntities);
                 _numbersRightAligned =
                     settings.RightAlignNumbers;
                 _useThrottledPlatinumRate =
@@ -5730,8 +6350,15 @@ PROJECT
                 _showLastTenExperience;
             PlatinumPerHourMenuItem.IsChecked =
                 _showPlatinumPerHour;
-            UnknownEntitiesMenuItem.IsChecked =
-                _showUnknownEntities;
+            DataFilterAllDataMenuItem.IsChecked =
+                _dataFilterMode ==
+                DataFilterMode.AllData;
+            DataFilterRemoveUnknownsMenuItem.IsChecked =
+                _dataFilterMode ==
+                DataFilterMode.RemoveUnknowns;
+            DataFilterOnlyKnownsMenuItem.IsChecked =
+                _dataFilterMode ==
+                DataFilterMode.OnlyKnowns;
             AlwaysShowGroupMembersMenuItem.IsChecked =
                 _alwaysShowGroupMembers;
             MainAssistIndicatorsMenuItem.IsChecked =
@@ -5794,8 +6421,11 @@ PROJECT
                         _showLastTenExperience,
                     ShowPlatinumPerHour =
                         _showPlatinumPerHour,
+                    DataFilteringMode =
+                        _dataFilterMode.ToString(),
                     ShowUnknownEntities =
-                        _showUnknownEntities,
+                        _dataFilterMode ==
+                        DataFilterMode.AllData,
                     RightAlignNumbers =
                         _numbersRightAligned,
                     UseThrottledPlatinumRate =
@@ -5878,6 +6508,7 @@ PROJECT
             _pendingBarrierWallClock = null;
             _pendingPartyExperienceTimestamp = null;
             _latestTargets.Clear();
+            _onlyKnownCombatEntities.Clear();
             ClearSpecialVisualEvents();
 
             _rows.Clear();
@@ -5932,7 +6563,8 @@ PROJECT
             public bool ShowExperiencePerHour { get; set; } = true;
             public bool ShowLastTenExperience { get; set; } = true;
             public bool ShowPlatinumPerHour { get; set; } = true;
-            public bool ShowUnknownEntities { get; set; } = true;
+            public string? DataFilteringMode { get; set; }
+            public bool? ShowUnknownEntities { get; set; }
             public bool RightAlignNumbers { get; set; }
             public bool UseThrottledPlatinumRate { get; set; } = true;
             public bool AlwaysShowGroupMembers { get; set; } = true;
@@ -5948,6 +6580,13 @@ PROJECT
             public double? WindowHeight { get; set; }
             public string? MainAssistName { get; set; }
             public List<string> ManualGroupMembers { get; set; } = new();
+        }
+
+        private enum DataFilterMode
+        {
+            AllData,
+            RemoveUnknowns,
+            OnlyKnowns
         }
 
         private enum DamageSpellCastType

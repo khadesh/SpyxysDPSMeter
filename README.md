@@ -18,7 +18,11 @@ SpyxysDPSMeter-Setup-1.X.Y-win-x64.exe
 - Selects the newest matching log file by last-write time and file size.
 - Reads new log data while EverQuest continues writing to the file.
 - Handles log truncation or replacement by reopening the active file.
-- Loads up to the latest 1,000 lines when switching logs.
+- Uses a refresh-rate-specific processing cap:
+  - `0.2s` — up to 200 lines per poll;
+  - `0.5s` — up to 500 lines per poll;
+  - `1.0s`, `2.0s`, `3.0s`, or `5.0s` — up to 1,000 lines per poll.
+- Retains up to 1,000 recent raw log lines internally.
 - Displays the active character and server in the title.
 
 The default log folder is:
@@ -46,7 +50,15 @@ The gear menu provides a **Refresh Rate** option that controls how often the met
 - `3.0s`
 - `5.0s`
 
-The selected rate takes effect immediately and is saved in `settings.json`. Faster rates make new combat events appear sooner but cause the log file to be checked more frequently. When the meter is hidden in the Windows system tray, active-log reading is temporarily reduced to `5.0s` to lower background activity. Restoring the window immediately returns to the player's selected rate without changing the saved setting. This setting changes active-log reading only; the meter still scans periodically for a newer character log.
+The selected rate takes effect immediately and is saved in `settings.json`. Its maximum processed lines per poll are:
+
+| Refresh rate | Maximum lines per poll |
+|---:|---:|
+| `0.2s` | 200 |
+| `0.5s` | 500 |
+| `1.0s` or slower | 1,000 |
+
+Faster rates make new combat events appear sooner but check the file more often. When the meter is hidden in the Windows system tray, active-log reading temporarily changes to `5.0s`, which uses the 1,000-line cap. Restoring the window immediately returns to the player's selected rate and matching cap without changing the saved setting. The separate scan for a newer character log remains unchanged.
 
 ### Damage and DPS
 
@@ -125,12 +137,31 @@ This means three distinct attackers recently damaged that entity.
 The meter uses distinct row/text colors for:
 
 - the monitored character;
-- known group members;
+- known or manually tagged group members;
 - the monitored character's pet;
 - known enemies;
 - unclassified entities.
 
-The **Unknown Entities** setting continuously controls whether unclassified combatants are displayed. When disabled, unknown rows remain filtered out even when new damage, healing, crowd-control, or spell-cast events arrive.
+### Data filtering
+
+The former **Unknown Entities** toggle has been replaced by a mutually exclusive **Data Filtering** submenu:
+
+| Mode | Behavior |
+|---|---|
+| **All data** | Shows and calculates every parsed entity. Intended for private instances where every combatant is relevant. |
+| **Remove unknowns** | Hides unclassified public players and pets while retaining the monitored player, owned pet, group members, manually tagged members, and known enemies. This matches the former Unknown Entities-off behavior. |
+| **Only knowns** | Calculates only combat involving the monitored player, owned pet, detected or manually tagged group members, and enemies directly engaged by those protected entities during the current encounter. |
+
+In **Only knowns** mode:
+
+- a non-group entity becomes encounter-scoped only through direct damage, an avoided attack, or a recognized harmful spell involving the player, owned pet, or group;
+- once scoped, a damage event is accepted only when both its source and target are protected friendlies or enemies scoped to the current encounter;
+- unrelated public players, public pets, and previously known enemies fighting elsewhere are not displayed and do not contribute damage or DPS;
+- damage from an unrelated public player to one of the group's scoped enemies is excluded because that public player was never tagged by the protected group;
+- switching to this mode during an encounter rebuilds the scope from direct protected-group interactions already recorded in the current fight;
+- temporary healing, casting, teleportation, and CC rows are subject to the same final display filter.
+
+The selected mode is saved in `settings.json`. Older settings migrate automatically: `ShowUnknownEntities: true` becomes **All data**, while `false` becomes **Remove unknowns**.
 
 ### Immediate hostile classification
 
@@ -140,9 +171,10 @@ An entity is immediately classified as hostile when it:
 - deals damage to the monitored character's pet;
 - deals damage to a known or manually tagged group member;
 - casts a recognized damaging or crowd-control spell that targets one of those protected entities;
-- lands a recognized charm, root, lull, mesmerize, or stun effect on one of those protected entities.
+- lands a recognized charm, root, lull, mesmerize, or stun effect on one of those protected entities;
+- is directly attacked by the protected group while **Only knowns** is active.
 
-The meter correlates harmful spell effects with recent cast-start messages to identify the caster. The player, owned pets, and known group members are never marked hostile by this rule. Hostile classification no longer waits for the enemy to die, and it remains active even when **Unknown Entities** is disabled.
+The meter correlates harmful spell effects with recent cast-start messages to identify the caster. The player, owned pets, and known group members are never marked hostile by these rules. Hostile classification happens immediately and no longer waits for the enemy to die.
 
 ### Group detection and manual tagging
 
@@ -247,7 +279,7 @@ The gear menu can toggle:
 - XP/h;
 - Last 10 XP/h;
 - Platinum/h;
-- unknown entities;
+- data filtering mode;
 - always-visible group members;
 - main-assist indicators;
 - spell-casting subtext;
@@ -263,7 +295,7 @@ Open the gear menu and choose:
 Help → Feature Guide...
 ```
 
-The scrollable in-app feature guide explains log monitoring, refresh rates, damage and spell indicators, teleportation, casting subtext, entity classification, hostile detection, group tools, main assist, healing, crowd control, XP, platinum, display settings, system-tray behavior, reset behavior, settings, and troubleshooting.
+The scrollable in-app feature guide explains log monitoring, refresh-rate line caps, all three data-filtering modes, damage and spell indicators, teleportation, casting subtext, entity classification, hostile detection, group tools, main assist, healing, crowd control, XP, platinum, display settings, system-tray behavior, reset behavior, settings, and troubleshooting.
 
 The same **Help** submenu also provides **Open GitHub Project**.
 
@@ -286,6 +318,7 @@ The reset button clears current:
 - XP tracking;
 - platinum tracking;
 - target history;
+- current Only knowns encounter scope;
 - temporary healing, teleportation, damage-spell, spell-casting subtext, and CC indicators.
 
 It does not erase saved application settings.
@@ -323,7 +356,7 @@ Settings are serialized as JSON to:
 <application folder>\settings.json
 ```
 
-The settings file includes display preferences, platinum mode, manual group members, main assist, the spell-casting subtext toggle, the active-log refresh rate, the selected log directory, and the saved window position and size.
+The settings file includes display preferences, the selected data-filtering mode, platinum mode, manual group members, main assist, the spell-casting subtext toggle, the active-log refresh rate, the selected log directory, and the saved window position and size.
 
 Example log-directory setting:
 
@@ -332,6 +365,16 @@ Example log-directory setting:
   "LogDirectory": "D:\\Games\\EverQuest Legends\\Logs"
 }
 ```
+
+Example data-filtering setting:
+
+```json
+{
+  "DataFilteringMode": "OnlyKnowns"
+}
+```
+
+Older `ShowUnknownEntities` values remain readable and are migrated automatically.
 
 ## Building
 

@@ -17,6 +17,9 @@ using System.Windows.Media;
 using System.Windows.Threading;
 namespace SpyxysDPSMeter
 {
+    // Powershell build commands:
+    //cd C:\Users\pigsc\source\repos\new\SpyxysDPSMeter
+    //powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\Build-Installer-And-Move.ps1" -Version 1.0.4
     public partial class MainWindow : Window
     {
         private const bool IsDebugMode = false;

@@ -17,14 +17,12 @@ using System.Windows.Media;
 using System.Windows.Threading;
 namespace SpyxysDPSMeter
 {
-    // Powershell build commands:
-    //cd C:\Users\pigsc\source\repos\new\SpyxysDPSMeter
-    //powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\Build-Installer-And-Move.ps1" -Version 1.0.4
     public partial class MainWindow : Window
     {
-        private const bool IsDebugMode = false;
+        private const bool IsDebugMode = true;
 
         private const int DebugMaximumLogLines = 10000;
+        private const int DebugMaximumChatMessages = 10000;
         private const double DebugReplayWindowSeconds = 25.0;
         private const double DebugMaximumSecondsPerLine = 0.0025;
 
@@ -185,6 +183,44 @@ namespace SpyxysDPSMeter
 
         private static readonly Regex GroupChatRegex = new(
             @"^(?<member>.+?) tells the group(?:,|:)",
+            RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+        private static readonly Regex IncomingTellChatRegex = new(
+            @"^(?<sender>.+?) tells you, '(?<text>.*)'$",
+            RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+        private static readonly Regex OutgoingTellChatRegex = new(
+            @"^You told (?<target>.+?), '(?<text>.*)'$",
+            RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+        private static readonly Regex StructuredChatRegex = new(
+            @"^(?<sender>You|.+?) tell(?:s)? (?:the |your )?" +
+            @"(?<channel>group|party|guild|raid|fellowship), '(?<text>.*)'$",
+            RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+        private static readonly Regex OutgoingStructuredSayChatRegex = new(
+            @"^You say to (?:the |your )?" +
+            @"(?<channel>group|party|guild|raid|fellowship), '(?<text>.*)'$",
+            RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+        private static readonly Regex OutOfCharacterChatRegex = new(
+            @"^(?<sender>You|.+?) say(?:s)? out of character, '(?<text>.*)'$",
+            RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+        private static readonly Regex AuctionChatRegex = new(
+            @"^(?<sender>You|.+?) auction(?:s)?, '(?<text>.*)'$",
+            RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+        private static readonly Regex ShoutChatRegex = new(
+            @"^(?<sender>You|.+?) shout(?:s)?, '(?<text>.*)'$",
+            RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+        private static readonly Regex SayChatRegex = new(
+            @"^(?<sender>You|.+?) say(?:s)?, '(?<text>.*)'$",
+            RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+        private static readonly Regex NumberedChannelChatRegex = new(
+            @"^(?<sender>You|.+?) tell(?:s)? (?<channel>[^,]+), '(?<text>.*)'$",
             RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
         private static readonly Regex GroupClearedRegex = new(
@@ -672,6 +708,8 @@ DEBUG SNAPSHOT MODE
 • true finds the newest available log and reads up to its last 10,000 lines once at startup.
 • All parseable lines in that 10,000-line tail are compressed into a recent synthetic timeline of at most 25 seconds.
 • Login resets and kill barriers are suppressed during the snapshot load so the parsed tail behaves like one active fight that just happened.
+• Instant Messenger scans the complete selected log and retains the newest 10,000 recognized chat messages for review.
+• Debug chat is not written to local chat history. Every debug chat message except Say is marked important without playing 10,000 startup sounds.
 • Live reading and the recurring newer-log scan are not started in debug mode.
 • The title and status line display DEBUG SNAPSHOT so a test build is easy to recognize.
 
@@ -705,6 +743,30 @@ DATA FILTERING
 • An outsider damaging a scoped enemy is excluded because that outsider was not tagged by the protected group.
 • Switching to Only knowns during a fight rebuilds the scope from direct interactions already recorded in the current encounter.
 • Older settings migrate automatically: Unknown Entities enabled becomes All data; disabled becomes Remove unknowns.
+
+INSTANT MESSENGER
+• Gear menu → Instant Messenger turns the feature on or off. It is enabled by default.
+• The single chat-bubble button in the main title bar opens or restores a separate always-on-top messenger window.
+• The badge over the chat button shows the total unread message count.
+• Chat is parsed from the active character log without interrupting combat parsing. Recognized pet tells are ignored.
+• Tabs are created dynamically for All and every discovered channel, including General, New Players, Say, Group, Guild, Tells, OOC, Auction, Shout, Raid, Fellowship, and custom numbered channels.
+• Each channel uses a distinct bubble color. The All tab includes every non-ignored channel.
+• Every channel tab has these saved options:
+  – Auto mark as read
+  – Auto mark as important
+  – Mark my name as important
+  – Ignore all
+• Auto mark as read defaults on for General, New Players, and Say.
+• Auto mark as important defaults on for Guild, Group, and Tells.
+• Mark my name as important defaults on for discovered channels.
+• Ignore all removes the channel from unread totals and the All tab and disregards future messages while enabled.
+• Important unread messages play the Windows exclamation sound.
+• Any tab containing important unread messages displays a blinking red !.
+• Important messages remain unread while the messenger is inactive. Scrolling an active tab to the bottom marks that tab as read.
+• Closing the messenger hides it; chat collection continues while the feature remains enabled.
+• Chat history is stored as JSON Lines under ChatLogs beside the application, using one character_server.chat.jsonl file per character and server.
+• Saved history loads automatically on startup and is marked read. Read and important state are intentionally session-only.
+• Disabling Instant Messenger stops new chat collection and hides the window without deleting saved history.
 
 DAMAGE AND DPS
 • Damage is grouped by attacker.
@@ -804,7 +866,7 @@ PLATINUM
 • Currency history is retained for up to one hour.
 
 DISPLAY OPTIONS
-• The gear menu can toggle player name, server name, XP/h, Last 10 XP/h, Platinum/h, always-visible group members, main-assist indicators, and spell-casting subtext.
+• The gear menu can toggle player name, server name, XP/h, Last 10 XP/h, Platinum/h, always-visible group members, main-assist indicators, spell-casting subtext, and Instant Messenger.
 • Data Filtering replaces the former Unknown Entities toggle.
 • Damage and DPS values can be aligned left or right.
 • Window position and size are saved automatically.
@@ -818,11 +880,12 @@ SYSTEM TRAY AND SINGLE INSTANCE
 
 RESET
 • The reset button clears current damage, DPS, encounter scope, XP, platinum, target history, healing indicators, teleport indicators, damage-spell indicators, casting subtext, and crowd-control indicators.
-• Reset does not erase saved application settings.
+• Reset does not erase saved application settings or Instant Messenger history, tabs, unread state, or channel preferences.
 
 SETTINGS AND TROUBLESHOOTING
 • Settings are stored in settings.json beside the executable.
 • DataFilteringMode stores AllData, RemoveUnknowns, or OnlyKnowns.
+• InstantMessengerEnabled and InstantMessengerChannelSettings store messenger availability and per-channel behavior.
 • Existing ShowUnknownEntities settings are migrated automatically.
 • If no log is detected, verify /log on and confirm the selected directory contains an eqlog_Character_server.txt file.
 • The newest matching log is selected. Log into or generate a new line for the desired character if the wrong character is active.
@@ -892,6 +955,14 @@ PROJECT
         private bool _windowHasLoaded;
         private bool _isApplyingWindowPlacement;
         private bool _isLoadingDebugSnapshot;
+
+        private InstantMessengerWindow? _instantMessengerWindow;
+        private bool _instantMessengerEnabled = true;
+        private readonly Dictionary<
+            string,
+            InstantMessengerChannelPreference>
+            _instantMessengerChannelSettings =
+                new(StringComparer.OrdinalIgnoreCase);
 
         private readonly List<DamageEvent> _fightDamageEvents = new();
         private readonly List<ExperienceEvent> _experienceEvents = new();
@@ -1045,6 +1116,8 @@ PROJECT
             _windowSettingsSaveTimer.Stop();
 
             SaveSettings();
+            _instantMessengerWindow?.Shutdown();
+            _instantMessengerWindow = null;
             DisposeTrayIcon();
             DisposeSingleInstanceResources();
         }
@@ -1523,6 +1596,643 @@ PROJECT
             RefreshDisplay();
         }
 
+        private void EnsureInstantMessengerWindow()
+        {
+            if (_instantMessengerWindow != null)
+            {
+                return;
+            }
+
+            _instantMessengerWindow =
+                new InstantMessengerWindow(
+                    _instantMessengerChannelSettings);
+
+            _instantMessengerWindow.UnreadStateChanged +=
+                InstantMessengerWindow_UnreadStateChanged;
+            _instantMessengerWindow.ChannelSettingsChanged +=
+                InstantMessengerWindow_ChannelSettingsChanged;
+        }
+
+        private void InitializeInstantMessengerForCurrentCharacter()
+        {
+            UpdateInstantMessengerButtonState();
+
+            if (!_instantMessengerEnabled)
+            {
+                return;
+            }
+
+            EnsureInstantMessengerWindow();
+
+            _instantMessengerWindow?.SetIdentity(
+                _characterName,
+                _serverName);
+        }
+
+        private void InstantMessengerWindow_UnreadStateChanged(
+            int unreadCount,
+            bool hasImportant)
+        {
+            if (!_instantMessengerEnabled)
+            {
+                InstantMessengerUnreadBadge.Visibility =
+                    Visibility.Collapsed;
+                return;
+            }
+
+            InstantMessengerUnreadText.Text =
+                unreadCount > 99
+                    ? "99+"
+                    : unreadCount.ToString(
+                        CultureInfo.InvariantCulture);
+
+            InstantMessengerUnreadBadge.Visibility =
+                unreadCount > 0
+                    ? Visibility.Visible
+                    : Visibility.Collapsed;
+
+            InstantMessengerUnreadBadge.Background =
+                hasImportant
+                    ? FrozenBrush(
+                        255,
+                        220,
+                        62,
+                        62)
+                    : FrozenBrush(
+                        255,
+                        42,
+                        137,
+                        214);
+        }
+
+        private void InstantMessengerWindow_ChannelSettingsChanged()
+        {
+            SaveSettings();
+        }
+
+        private void InstantMessengerButton_Click(
+            object sender,
+            RoutedEventArgs e)
+        {
+            if (!_instantMessengerEnabled)
+            {
+                SetStatus(
+                    "Instant Messenger is disabled in the gear menu.");
+                return;
+            }
+
+            InitializeInstantMessengerForCurrentCharacter();
+            _instantMessengerWindow?.ShowMessenger();
+        }
+
+        private void InstantMessengerSettingMenuItem_Click(
+            object sender,
+            RoutedEventArgs e)
+        {
+            if (sender is not
+                    global::System.Windows.Controls.MenuItem menuItem)
+            {
+                return;
+            }
+
+            _instantMessengerEnabled =
+                menuItem.IsChecked;
+
+            if (_instantMessengerEnabled)
+            {
+                InitializeInstantMessengerForCurrentCharacter();
+                _instantMessengerWindow?.PublishUnreadState();
+                SetStatus(
+                    "Instant Messenger enabled.");
+            }
+            else
+            {
+                _instantMessengerWindow?.HideMessenger();
+                InstantMessengerUnreadBadge.Visibility =
+                    Visibility.Collapsed;
+                SetStatus(
+                    "Instant Messenger disabled. New chat lines will be ignored.");
+            }
+
+            UpdateInstantMessengerButtonState();
+            SaveSettings();
+        }
+
+        private void UpdateInstantMessengerButtonState()
+        {
+            InstantMessengerButton.IsEnabled =
+                _instantMessengerEnabled;
+            InstantMessengerButton.Opacity =
+                _instantMessengerEnabled
+                    ? 1
+                    : 0.35;
+            InstantMessengerButton.ToolTip =
+                _instantMessengerEnabled
+                    ? "Open Instant Messenger"
+                    : "Instant Messenger is disabled in settings";
+
+            if (!_instantMessengerEnabled)
+            {
+                InstantMessengerUnreadBadge.Visibility =
+                    Visibility.Collapsed;
+            }
+        }
+
+        private void CaptureInstantMessengerMessage(
+            string message,
+            DateTime timestamp)
+        {
+            if (!_instantMessengerEnabled ||
+                !TryParseInstantMessengerMessage(
+                    message,
+                    timestamp,
+                    out InstantMessageRecord? chatMessage))
+            {
+                return;
+            }
+
+            InitializeInstantMessengerForCurrentCharacter();
+            _instantMessengerWindow?.AddLiveMessage(
+                chatMessage!);
+        }
+
+        private bool TryParseInstantMessengerMessage(
+            string message,
+            DateTime timestamp,
+            out InstantMessageRecord? chatMessage)
+        {
+            chatMessage = null;
+
+            if (string.IsNullOrWhiteSpace(
+                    message) ||
+                PetAttackRegex.IsMatch(
+                    message))
+            {
+                return false;
+            }
+
+            Match match =
+                IncomingTellChatRegex.Match(
+                    message);
+
+            if (match.Success)
+            {
+                string sender =
+                    NormalizeEntity(
+                        match.Groups["sender"].Value);
+
+                if (IsOwnedPet(sender))
+                {
+                    return false;
+                }
+
+                chatMessage =
+                    CreateInstantMessageRecord(
+                        timestamp,
+                        "Tells",
+                        sender,
+                        _characterName,
+                        match.Groups["text"].Value,
+                        isOutgoing: false);
+
+                return true;
+            }
+
+            match =
+                OutgoingTellChatRegex.Match(
+                    message);
+
+            if (match.Success)
+            {
+                chatMessage =
+                    CreateInstantMessageRecord(
+                        timestamp,
+                        "Tells",
+                        _characterName,
+                        NormalizeEntity(
+                            match.Groups["target"].Value),
+                        match.Groups["text"].Value,
+                        isOutgoing: true);
+
+                return true;
+            }
+
+            match =
+                StructuredChatRegex.Match(
+                    message);
+
+            if (match.Success)
+            {
+                string rawSender =
+                    match.Groups["sender"].Value;
+                bool isOutgoing =
+                    rawSender.Equals(
+                        "You",
+                        StringComparison.OrdinalIgnoreCase);
+                string sender =
+                    isOutgoing
+                        ? _characterName
+                        : NormalizeEntity(
+                            rawSender);
+
+                if (!isOutgoing &&
+                    IsOwnedPet(sender))
+                {
+                    return false;
+                }
+
+                string channel =
+                    NormalizeInstantMessengerChannelName(
+                        match.Groups["channel"].Value);
+
+                chatMessage =
+                    CreateInstantMessageRecord(
+                        timestamp,
+                        channel,
+                        sender,
+                        null,
+                        match.Groups["text"].Value,
+                        isOutgoing);
+
+                return true;
+            }
+
+            match =
+                OutgoingStructuredSayChatRegex.Match(
+                    message);
+
+            if (match.Success)
+            {
+                chatMessage =
+                    CreateInstantMessageRecord(
+                        timestamp,
+                        NormalizeInstantMessengerChannelName(
+                            match.Groups["channel"].Value),
+                        _characterName,
+                        null,
+                        match.Groups["text"].Value,
+                        isOutgoing: true);
+
+                return true;
+            }
+
+            match =
+                OutOfCharacterChatRegex.Match(
+                    message);
+
+            if (match.Success)
+            {
+                return TryCreateSimpleInstantMessage(
+                    match,
+                    timestamp,
+                    "OOC",
+                    out chatMessage);
+            }
+
+            match =
+                AuctionChatRegex.Match(
+                    message);
+
+            if (match.Success)
+            {
+                return TryCreateSimpleInstantMessage(
+                    match,
+                    timestamp,
+                    "Auction",
+                    out chatMessage);
+            }
+
+            match =
+                ShoutChatRegex.Match(
+                    message);
+
+            if (match.Success)
+            {
+                return TryCreateSimpleInstantMessage(
+                    match,
+                    timestamp,
+                    "Shout",
+                    out chatMessage);
+            }
+
+            match =
+                SayChatRegex.Match(
+                    message);
+
+            if (match.Success)
+            {
+                return TryCreateSimpleInstantMessage(
+                    match,
+                    timestamp,
+                    "Say",
+                    out chatMessage);
+            }
+
+            match =
+                NumberedChannelChatRegex.Match(
+                    message);
+
+            if (!match.Success)
+            {
+                return false;
+            }
+
+            string rawChannel =
+                match.Groups["channel"].Value;
+
+            if (rawChannel.Equals(
+                    "you",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            string numberedSender =
+                match.Groups["sender"].Value;
+            bool numberedOutgoing =
+                numberedSender.Equals(
+                    "You",
+                    StringComparison.OrdinalIgnoreCase);
+            string normalizedSender =
+                numberedOutgoing
+                    ? _characterName
+                    : NormalizeEntity(
+                        numberedSender);
+
+            if (!numberedOutgoing &&
+                IsOwnedPet(normalizedSender))
+            {
+                return false;
+            }
+
+            chatMessage =
+                CreateInstantMessageRecord(
+                    timestamp,
+                    NormalizeInstantMessengerChannelName(
+                        rawChannel),
+                    normalizedSender,
+                    null,
+                    match.Groups["text"].Value,
+                    numberedOutgoing);
+
+            return true;
+        }
+
+        private bool TryCreateSimpleInstantMessage(
+            Match match,
+            DateTime timestamp,
+            string channel,
+            out InstantMessageRecord? chatMessage)
+        {
+            string rawSender =
+                match.Groups["sender"].Value;
+            bool isOutgoing =
+                rawSender.Equals(
+                    "You",
+                    StringComparison.OrdinalIgnoreCase);
+            string sender =
+                isOutgoing
+                    ? _characterName
+                    : NormalizeEntity(
+                        rawSender);
+
+            if (!isOutgoing &&
+                IsOwnedPet(sender))
+            {
+                chatMessage = null;
+                return false;
+            }
+
+            chatMessage =
+                CreateInstantMessageRecord(
+                    timestamp,
+                    channel,
+                    sender,
+                    null,
+                    match.Groups["text"].Value,
+                    isOutgoing);
+
+            return true;
+        }
+
+        private static InstantMessageRecord CreateInstantMessageRecord(
+            DateTime timestamp,
+            string channel,
+            string sender,
+            string? recipient,
+            string text,
+            bool isOutgoing)
+        {
+            return new InstantMessageRecord
+            {
+                Timestamp = timestamp,
+                Channel =
+                    NormalizeInstantMessengerChannelName(
+                        channel),
+                Sender =
+                    string.IsNullOrWhiteSpace(
+                        sender)
+                        ? "Unknown"
+                        : sender.Trim(),
+                Recipient =
+                    string.IsNullOrWhiteSpace(
+                        recipient)
+                        ? null
+                        : recipient.Trim(),
+                Text =
+                    (text ?? string.Empty)
+                    .Trim(),
+                IsOutgoing = isOutgoing
+            };
+        }
+
+        private static string NormalizeInstantMessengerChannelName(
+            string channel)
+        {
+            string normalized =
+                string.IsNullOrWhiteSpace(
+                    channel)
+                    ? "Other"
+                    : channel.Trim();
+
+            normalized =
+                Regex.Replace(
+                    normalized,
+                    @":\d+$",
+                    string.Empty)
+                .Trim();
+
+            string compact =
+                new(
+                    normalized
+                    .Where(char.IsLetterOrDigit)
+                    .ToArray());
+
+            if (compact.Equals(
+                    "newplayers",
+                    StringComparison.OrdinalIgnoreCase) ||
+                compact.Equals(
+                    "newplayer",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return "New Players";
+            }
+
+            if (compact.Equals(
+                    "group",
+                    StringComparison.OrdinalIgnoreCase) ||
+                compact.Equals(
+                    "groupsay",
+                    StringComparison.OrdinalIgnoreCase) ||
+                compact.Equals(
+                    "party",
+                    StringComparison.OrdinalIgnoreCase) ||
+                compact.Equals(
+                    "yourparty",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return "Group";
+            }
+
+            if (compact.Equals(
+                    "tell",
+                    StringComparison.OrdinalIgnoreCase) ||
+                compact.Equals(
+                    "tells",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return "Tells";
+            }
+
+            if (compact.Equals(
+                    "ooc",
+                    StringComparison.OrdinalIgnoreCase) ||
+                compact.Equals(
+                    "outofcharacter",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return "OOC";
+            }
+
+            return normalized;
+        }
+
+        private static InstantMessengerChannelPreference
+            CreateDefaultInstantMessengerChannelPreference(
+                string channel)
+        {
+            string normalized =
+                NormalizeInstantMessengerChannelName(
+                    channel);
+
+            return new InstantMessengerChannelPreference
+            {
+                AutoMarkRead =
+                    normalized.Equals(
+                        "General",
+                        StringComparison.OrdinalIgnoreCase) ||
+                    normalized.Equals(
+                        "New Players",
+                        StringComparison.OrdinalIgnoreCase) ||
+                    normalized.Equals(
+                        "Say",
+                        StringComparison.OrdinalIgnoreCase),
+                AutoMarkImportant =
+                    normalized.Equals(
+                        "Guild",
+                        StringComparison.OrdinalIgnoreCase) ||
+                    normalized.Equals(
+                        "Group",
+                        StringComparison.OrdinalIgnoreCase) ||
+                    normalized.Equals(
+                        "Tells",
+                        StringComparison.OrdinalIgnoreCase),
+                MarkMyNameImportant = true,
+                IgnoreAll = false
+            };
+        }
+
+        private int LoadDebugInstantMessengerSnapshot(
+            string logPath)
+        {
+            if (!_instantMessengerEnabled)
+            {
+                return 0;
+            }
+
+            InitializeInstantMessengerForCurrentCharacter();
+
+            Queue<InstantMessageRecord> chatMessages =
+                new();
+
+            using FileStream stream =
+                OpenSharedRead(
+                    logPath);
+            using StreamReader reader =
+                new(
+                    stream,
+                    Encoding.UTF8,
+                    detectEncodingFromByteOrderMarks: true,
+                    bufferSize: 16 * 1024,
+                    leaveOpen: false);
+
+            while (reader.ReadLine() is string line)
+            {
+                if (!TryGetMessage(
+                        line,
+                        out DateTime timestamp,
+                        out string message))
+                {
+                    continue;
+                }
+
+                Match petMatch =
+                    PetAttackRegex.Match(
+                        message);
+
+                if (petMatch.Success)
+                {
+                    string petName =
+                        NormalizeEntity(
+                            petMatch.Groups["pet"].Value);
+
+                    if (!string.IsNullOrWhiteSpace(
+                            petName))
+                    {
+                        _petOwners[petName] =
+                            _characterName;
+                    }
+                }
+
+                if (!TryParseInstantMessengerMessage(
+                        message,
+                        timestamp,
+                        out InstantMessageRecord? chatMessage))
+                {
+                    continue;
+                }
+
+                chatMessages.Enqueue(
+                    chatMessage!);
+
+                while (chatMessages.Count >
+                       DebugMaximumChatMessages)
+                {
+                    chatMessages.Dequeue();
+                }
+            }
+
+            List<InstantMessageRecord> replayMessages =
+                chatMessages.ToList();
+
+            _instantMessengerWindow?
+                .ReplaceWithDebugMessages(
+                    replayMessages);
+
+            return replayMessages.Count;
+        }
+
+
         private void LoadDebugSnapshotFromLatestLog()
         {
             try
@@ -1571,6 +2281,7 @@ PROJECT
                     CapitalizeFirst(
                         fileMatch.Groups["server"].Value);
 
+                InitializeInstantMessengerForCurrentCharacter();
                 ResetAllState();
 
                 TailReadResult tail =
@@ -1664,6 +2375,10 @@ PROJECT
                 PruneOldDamageEvents();
                 RefreshDisplay();
 
+                int debugChatMessageCount =
+                    LoadDebugInstantMessengerSnapshot(
+                        newest.FullName);
+
                 string fightState =
                     _fightActive
                         ? "Combat active"
@@ -1672,7 +2387,9 @@ PROJECT
                             : "Waiting for damage";
 
                 SetStatus(
-                    $"DEBUG snapshot — {fightState} — loaded {replayLines.Count:N0} lines from {newest.Name}");
+                    $"DEBUG snapshot — {fightState} — loaded " +
+                    $"{replayLines.Count:N0} combat-source lines and " +
+                    $"{debugChatMessageCount:N0} chat messages from {newest.Name}");
             }
             catch (Exception ex)
             {
@@ -1741,6 +2458,7 @@ PROJECT
                 _characterName = fileMatch.Groups["character"].Value;
                 _serverName = CapitalizeFirst(fileMatch.Groups["server"].Value);
 
+                InitializeInstantMessengerForCurrentCharacter();
                 ResetAllState();
 
                 int maximumLinesPerRead =
@@ -1872,9 +2590,46 @@ PROJECT
                 int completeCount = endsWithNewLine ? pieces.Length : pieces.Length - 1;
                 _pendingText = endsWithNewLine ? string.Empty : pieces[^1];
 
-                IEnumerable<string> completeLines = pieces
+                List<string> completeLines = pieces
                     .Take(Math.Max(0, completeCount))
-                    .Where(line => !string.IsNullOrWhiteSpace(line));
+                    .Where(line => !string.IsNullOrWhiteSpace(line))
+                    .ToList();
+
+                if (_instantMessengerEnabled)
+                {
+                    foreach (string line in completeLines)
+                    {
+                        if (!TryGetMessage(
+                                line,
+                                out DateTime chatTimestamp,
+                                out string chatMessage))
+                        {
+                            continue;
+                        }
+
+                        Match chatPetMatch =
+                            PetAttackRegex.Match(
+                                chatMessage);
+
+                        if (chatPetMatch.Success)
+                        {
+                            string petName =
+                                NormalizeEntity(
+                                    chatPetMatch.Groups["pet"].Value);
+
+                            if (!string.IsNullOrWhiteSpace(
+                                    petName))
+                            {
+                                _petOwners[petName] =
+                                    _characterName;
+                            }
+                        }
+
+                        CaptureInstantMessengerMessage(
+                            chatMessage,
+                            chatTimestamp);
+                    }
+                }
 
                 int maximumLinesPerRead =
                     GetCurrentMaximumLinesPerRead();
@@ -1885,7 +2640,10 @@ PROJECT
 
                 foreach (string line in lines)
                 {
-                    ProcessRawLine(line, isInitialLoad: false);
+                    ProcessRawLine(
+                        line,
+                        isInitialLoad: false,
+                        captureInstantMessenger: false);
                 }
 
                 SetStatus($"Monitoring {Path.GetFileName(_activeFilePath)}");
@@ -1907,7 +2665,8 @@ PROJECT
         private void ProcessRawLine(
             string rawLine,
             bool isInitialLoad,
-            DateTime? timestampOverride = null)
+            DateTime? timestampOverride = null,
+            bool captureInstantMessenger = true)
         {
             if (!TryGetMessage(
                     rawLine,
@@ -1920,6 +2679,15 @@ PROJECT
             DateTime timestamp =
                 timestampOverride ??
                 parsedTimestamp;
+
+            if (_instantMessengerEnabled &&
+                !isInitialLoad &&
+                captureInstantMessenger)
+            {
+                CaptureInstantMessengerMessage(
+                    message,
+                    timestamp);
+            }
 
             if (_latestLogTimestamp == null || timestamp > _latestLogTimestamp)
             {
@@ -6297,6 +7065,30 @@ PROJECT
                     settings.ShowMainAssistIndicators;
                 _showSpellCastingSubtext =
                     settings.ShowSpellCastingSubtext;
+                _instantMessengerEnabled =
+                    settings.InstantMessengerEnabled;
+
+                _instantMessengerChannelSettings.Clear();
+
+                foreach (KeyValuePair<
+                             string,
+                             InstantMessengerChannelPreference>
+                         pair in
+                         settings.InstantMessengerChannelSettings ??
+                         new Dictionary<
+                             string,
+                             InstantMessengerChannelPreference>())
+                {
+                    string key =
+                        NormalizeInstantMessengerChannelName(
+                            pair.Key);
+
+                    _instantMessengerChannelSettings[key] =
+                        pair.Value ??
+                        CreateDefaultInstantMessengerChannelPreference(
+                            key);
+                }
+
                 _logRefreshIntervalSeconds =
                     NormalizeLogRefreshIntervalSeconds(
                         settings.LogRefreshIntervalSeconds);
@@ -6368,6 +7160,9 @@ PROJECT
                 _showMainAssistIndicators;
             SpellCastingSubtextMenuItem.IsChecked =
                 _showSpellCastingSubtext;
+            InstantMessengerMenuItem.IsChecked =
+                _instantMessengerEnabled;
+            UpdateInstantMessengerButtonState();
 
             RefreshRate02MenuItem.IsChecked =
                 Math.Abs(
@@ -6439,6 +7234,14 @@ PROJECT
                         _showMainAssistIndicators,
                     ShowSpellCastingSubtext =
                         _showSpellCastingSubtext,
+                    InstantMessengerEnabled =
+                        _instantMessengerEnabled,
+                    InstantMessengerChannelSettings =
+                        _instantMessengerChannelSettings
+                            .ToDictionary(
+                                pair => pair.Key,
+                                pair => pair.Value,
+                                StringComparer.OrdinalIgnoreCase),
                     LogRefreshIntervalSeconds =
                         _logRefreshIntervalSeconds,
                     LogDirectory =
@@ -6573,6 +7376,12 @@ PROJECT
             public bool AlwaysShowGroupMembers { get; set; } = true;
             public bool ShowMainAssistIndicators { get; set; } = true;
             public bool ShowSpellCastingSubtext { get; set; } = true;
+            public bool InstantMessengerEnabled { get; set; } = true;
+            public Dictionary<
+                string,
+                InstantMessengerChannelPreference>
+                InstantMessengerChannelSettings { get; set; } =
+                    new();
             public double LogRefreshIntervalSeconds { get; set; } =
                 DefaultLogRefreshIntervalSeconds;
             public string LogDirectory { get; set; } =
